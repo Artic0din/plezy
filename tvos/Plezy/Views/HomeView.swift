@@ -215,9 +215,8 @@ struct HomeView: View {
                         scrollOffset = value
                         // Hide hero when scrolled past Continue Watching section into rows below
                         // Threshold set to fade out when user scrolls into the hub rows below Continue Watching
-                        // (~980 points accounts for spacer (680) + Continue Watching row (~300))
                         withAnimation(.easeInOut(duration: 0.4)) {
-                            shouldShowHero = value > -980
+                            shouldShowHero = value > -850
                         }
                     }
                 }
