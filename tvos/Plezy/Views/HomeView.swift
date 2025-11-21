@@ -123,10 +123,10 @@ struct HomeView: View {
                                     )
                                 }
                                 .opacity(shouldShowHero ? 1 : 0)
-                                .padding(.bottom, 30) // Gap from bottom of spacer to CW
+                                .padding(.bottom, 20) // Gap from bottom of spacer to CW
                             }
                         }
-                        .frame(height: 900) // Fixed height - Continue Watching position locked
+                        .frame(height: 680) // Fixed height - Continue Watching position locked
 
                         // Continue Watching section
                         if !onDeck.isEmpty {
@@ -215,9 +215,9 @@ struct HomeView: View {
                         scrollOffset = value
                         // Hide hero when scrolled past Continue Watching section into rows below
                         // Threshold set to fade out when user scrolls into the hub rows below Continue Watching
-                        // (~1200 points accounts for spacer (900) + Continue Watching row (~300))
+                        // (~980 points accounts for spacer (680) + Continue Watching row (~300))
                         withAnimation(.easeInOut(duration: 0.4)) {
-                            shouldShowHero = value > -1200
+                            shouldShowHero = value > -980
                         }
                     }
                 }
