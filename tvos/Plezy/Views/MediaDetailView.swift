@@ -529,26 +529,35 @@ struct MediaDetailView: View {
         isLoading = true
 
         do {
+            // Fetch metadata and handle show/movie specific logic concurrently
             let detailed = try await client.getMetadata(ratingKey: ratingKey)
             detailedMedia = detailed
 
-            // If it's a TV show, load seasons and onDeck episode
+            // If it's a TV show, load seasons, onDeck, and episodes concurrently
             if media.type == "show" {
-                seasons = try await client.getChildren(ratingKey: ratingKey)
+                async let seasonsTask = client.getChildren(ratingKey: ratingKey)
+                async let onDeckTask = client.getOnDeck()
 
-                // Load episodes for the first season by default
+                // Wait for both to complete
+                let (loadedSeasons, onDeckItems) = try await (seasonsTask, onDeckTask)
+                seasons = loadedSeasons
+
+                // Find onDeck episode for this show
+                onDeckEpisode = onDeckItems.first { episode in
+                    episode.grandparentRatingKey == ratingKey
+                }
+
+                // Load episodes for the first season
                 if let firstSeason = seasons.first {
                     selectedSeason = firstSeason
                     if let seasonRatingKey = firstSeason.ratingKey {
                         episodes = try await client.getChildren(ratingKey: seasonRatingKey)
                         print("📺 [MediaDetailView] Loaded \(episodes.count) episodes for \(firstSeason.title)")
-                    }
-                }
 
-                // Try to get the onDeck episode for this show
-                let onDeckItems = try await client.getOnDeck()
-                onDeckEpisode = onDeckItems.first { episode in
-                    episode.grandparentRatingKey == ratingKey
+                        // Prefetch episode thumbnails for faster display
+                        let thumbnailURLs = episodes.compactMap { episodeThumbnailURL(for: $0) }
+                        ImageCacheService.shared.prefetch(urls: thumbnailURLs)
+                    }
                 }
 
                 print("📺 [MediaDetailView] OnDeck episode for show: \(onDeckEpisode?.title ?? "none")")
@@ -604,6 +613,10 @@ struct MediaDetailView: View {
         do {
             episodes = try await client.getChildren(ratingKey: ratingKey)
             print("📺 [MediaDetailView] Loaded \(episodes.count) episodes for \(season.title)")
+
+            // Prefetch episode thumbnails for faster display
+            let thumbnailURLs = episodes.compactMap { episodeThumbnailURL(for: $0) }
+            ImageCacheService.shared.prefetch(urls: thumbnailURLs)
         } catch {
             print("Error loading episodes for season: \(error)")
             episodes = []

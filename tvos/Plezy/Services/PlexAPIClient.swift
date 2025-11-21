@@ -56,8 +56,29 @@ class PlexAPIClient {
         self.accessToken = accessToken
 
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 120
+
+        // Optimize timeouts for faster response
+        configuration.timeoutIntervalForRequest = 15 // Reduced from 30
+        configuration.timeoutIntervalForResource = 60 // Reduced from 120
+
+        // Enable HTTP pipelining and multiplexing for better performance
+        configuration.httpShouldUsePipelining = true
+        configuration.httpMaximumConnectionsPerHost = 6 // Allow more concurrent connections
+
+        // Configure aggressive caching
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cacheURL = cachesDirectory.appendingPathComponent("PlexAPICache")
+        let cache = URLCache(
+            memoryCapacity: 50 * 1024 * 1024, // 50 MB memory cache
+            diskCapacity: 200 * 1024 * 1024,  // 200 MB disk cache
+            directory: cacheURL
+        )
+        configuration.urlCache = cache
+        configuration.requestCachePolicy = .returnCacheDataElseLoad
+
+        // Enable connection pooling
+        configuration.shouldUseExtendedBackgroundIdleMode = true
+
         self.session = URLSession(configuration: configuration)
     }
 
