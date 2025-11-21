@@ -14,332 +14,31 @@ struct MediaDetailView: View {
     @State private var detailedMedia: PlexMetadata?
     @State private var seasons: [PlexMetadata] = []
     @State private var episodes: [PlexMetadata] = []
+    @State private var selectedSeason: PlexMetadata?
     @State private var onDeckEpisode: PlexMetadata?
     @State private var isLoading = true
-    @State private var selectedSeason: PlexMetadata?
     @State private var selectedEpisode: PlexMetadata?
     @State private var showVideoPlayer = false
     @State private var playMedia: PlexMetadata?
     @State private var trailers: [PlexMetadata] = []
+    @State private var focusedEpisode: PlexMetadata?
+    @State private var isEpisodeRowFocused = false
 
     var body: some View {
         let _ = print("📄 [MediaDetailView] body evaluated for: \(media.title)")
         ZStack {
-            Color.black.ignoresSafeArea()
+            // Layer 1: Background
+            backgroundLayer
 
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Hero Banner Section
-                    ZStack(alignment: .bottomLeading) {
-                        // Background art
-                        if let artURL = artworkURL {
-                            CachedAsyncImage(url: artURL) { image in
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.3))
-                            }
-                            .frame(height: 850)
-                            .clipped()
-                        }
+            // Layer 2: Base Content (Hero info + Bottom sheet)
+            baseContentLayer
 
-                        // Enhanced gradient overlay with beacon accent
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.beaconPurple.opacity(0.12),
-                                Color.black.opacity(0.75),
-                                Color.black
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 850)
-
-                        // Content overlay
-                        VStack(alignment: .leading, spacing: 20) {
-                            Spacer()
-
-                            // Clear logo or title
-                            if let clearLogo = displayMedia.clearLogo, let logoURL = logoURL(for: clearLogo) {
-                                CachedAsyncImage(url: logoURL) { image in
-                                    image
-                                        .resizable()
-                                        .scaledToFit()
-                                } placeholder: {
-                                    Text(displayMedia.title)
-                                        .font(.system(size: 60, weight: .heavy, design: .default))
-                                        .foregroundColor(.white)
-                                }
-                                .frame(maxWidth: 600, maxHeight: 180, alignment: .leading)
-                            } else {
-                                Text(displayMedia.title)
-                                    .font(.system(size: 60, weight: .heavy, design: .default))
-                                    .foregroundColor(.white)
-                                    .lineLimit(2)
-                                    .frame(maxWidth: 1000, alignment: .leading)
-                            }
-
-                            // Metadata chips
-                            HStack(spacing: 12) {
-                                // Content type
-                                Text(displayMedia.type == "movie" ? "Movie" : "TV Show")
-                                    .font(.system(size: 24, weight: .medium))
-                                    .foregroundColor(.white)
-
-                                if displayMedia.audienceRating != nil || displayMedia.contentRating != nil || displayMedia.year != nil || displayMedia.duration != nil {
-                                    ForEach(metadataComponents, id: \.self) { component in
-                                        Text("·")
-                                            .foregroundColor(.white.opacity(0.7))
-                                        Text(component)
-                                            .font(.system(size: 24, weight: .medium))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                            }
-
-                            // Summary (show episode synopsis for on-deck shows)
-                            if let summary = summaryText, !summary.isEmpty {
-                                Text(summary)
-                                    .font(.system(size: 26, weight: .regular))
-                                    .foregroundColor(.white.opacity(0.85))
-                                    .lineLimit(4)
-                                    .frame(maxWidth: 1200, alignment: .leading)
-                            }
-
-                            // Action buttons
-                            HStack(spacing: 20) {
-                                // Play button (primary)
-                                Button {
-                                    handlePlayButton()
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "play.fill")
-                                            .font(.system(size: 20, weight: .semibold))
-                                        Text(playButtonLabel)
-                                            .font(.system(size: 24, weight: .semibold))
-                                    }
-                                    .foregroundColor(.white)
-                                }
-                                .buttonStyle(.clearGlass)
-
-                                // Shuffle button (shows/seasons only)
-                                if displayMedia.type == "show" && !seasons.isEmpty {
-                                    Button {
-                                        handleShufflePlay()
-                                    } label: {
-                                        Image(systemName: "shuffle")
-                                            .font(.system(size: 24))
-                                            .foregroundColor(.white)
-                                    }
-                                    .buttonStyle(CardButtonStyle())
-                                }
-
-                                // Trailer button (movies only)
-                                if displayMedia.type == "movie" && !trailers.isEmpty {
-                                    Button {
-                                        handleTrailerPlay()
-                                    } label: {
-                                        HStack(spacing: 8) {
-                                            Image(systemName: "play.rectangle")
-                                                .font(.system(size: 20))
-                                            Text("Trailer")
-                                                .font(.system(size: 22, weight: .medium))
-                                        }
-                                        .foregroundColor(.white)
-                                    }
-                                    .buttonStyle(CardButtonStyle())
-                                }
-
-                                // Mark as watched/unwatched
-                                Button {
-                                    Task {
-                                        await toggleWatched()
-                                    }
-                                } label: {
-                                    Image(systemName: displayMedia.isWatched ? "checkmark.circle.fill" : "checkmark.circle")
-                                        .font(.system(size: 24))
-                                        .foregroundColor(.white)
-                                }
-                                .buttonStyle(CardButtonStyle())
-                            }
-                        }
-                        .padding(.horizontal, 60)
-                        .padding(.bottom, 80)
-                    }
-                    .frame(height: 850)
-
-                    // Content sections below hero
-                    VStack(alignment: .leading, spacing: 40) {
-                        // Genres with Liquid Glass
-                        if let genres = displayMedia.genre, !genres.isEmpty {
-                            HStack(spacing: 12) {
-                                ForEach(genres.prefix(5), id: \.tag) { genre in
-                                    Text(genre.tag)
-                                        .font(.system(size: 22, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 10)
-                                        .background(
-                                            ZStack {
-                                                Capsule()
-                                                    .fill(.ultraThinMaterial)
-                                                    .opacity(0.8)
-
-                                                Capsule()
-                                                    .fill(
-                                                        LinearGradient(
-                                                            colors: [
-                                                                Color.beaconBlue.opacity(0.15),
-                                                                Color.beaconPurple.opacity(0.12)
-                                                            ],
-                                                            startPoint: .leading,
-                                                            endPoint: .trailing
-                                                        )
-                                                    )
-                                                    .blendMode(.plusLighter)
-                                            }
-                                        )
-                                        .overlay(
-                                            Capsule()
-                                                .strokeBorder(
-                                                    Color.white.opacity(0.25),
-                                                    lineWidth: 1
-                                                )
-                                        )
-                                }
-                            }
-                        }
-
-                        // Cast
-                        if let cast = displayMedia.role, !cast.isEmpty {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text("Cast")
-                                    .font(.system(size: 32, weight: .bold))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [.white, Color.beaconTextSecondary],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 24) {
-                                        ForEach(cast.prefix(10), id: \.tag) { actor in
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                // Cast photo with Liquid Glass
-                                                Circle()
-                                                    .fill(.regularMaterial)
-                                                    .opacity(0.4)
-                                                    .overlay(
-                                                        Circle()
-                                                            .fill(
-                                                                LinearGradient(
-                                                                    colors: [
-                                                                        Color.beaconBlue.opacity(0.08),
-                                                                        Color.beaconPurple.opacity(0.06)
-                                                                    ],
-                                                                    startPoint: .topLeading,
-                                                                    endPoint: .bottomTrailing
-                                                                )
-                                                            )
-                                                            .blendMode(.plusLighter)
-                                                    )
-                                                    .overlay(
-                                                        Image(systemName: "person.fill")
-                                                            .font(.system(size: 50))
-                                                            .foregroundColor(.white.opacity(0.5))
-                                                    )
-                                                    .frame(width: 140, height: 140)
-
-                                                Text(actor.tag)
-                                                    .font(.system(size: 20, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(2)
-                                                    .frame(width: 140, alignment: .leading)
-
-                                                if let role = actor.role {
-                                                    Text(role)
-                                                        .font(.system(size: 18, weight: .regular))
-                                                        .foregroundColor(.gray)
-                                                        .lineLimit(2)
-                                                        .frame(width: 140, alignment: .leading)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                .tvOSScrollClipDisabled()
-                            }
-                            .padding(.vertical, 20)
-                        }
-
-                        // TV Show seasons or episodes
-                        if media.type == "show" && !seasons.isEmpty {
-                            // Show episodes directly for single-season shows
-                            if seasons.count == 1 && !episodes.isEmpty {
-                                VStack(alignment: .leading, spacing: 20) {
-                                    Text("Episodes")
-                                        .font(.system(size: 32, weight: .bold))
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [.white, Color.beaconTextSecondary],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-
-                                    LazyVStack(spacing: 20) {
-                                        ForEach(episodes) { episode in
-                                            EpisodeRow(episode: episode) {
-                                                selectedEpisode = episode
-                                                playMedia = episode
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Show season grid for multi-season shows
-                                VStack(alignment: .leading, spacing: 20) {
-                                    Text("Seasons")
-                                        .font(.system(size: 32, weight: .bold))
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [.white, Color.beaconTextSecondary],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-
-                                    // Grid layout for seasons
-                                    GeometryReader { geometry in
-                                        Color.clear.preference(key: SeasonGridWidthPreferenceKey.self, value: geometry.size.width)
-                                    }
-                                    .frame(height: 0)
-
-                                    SeasonGridView(
-                                        seasons: seasons,
-                                        onSeasonTapped: { season in
-                                            selectedSeason = season
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 60)
-                    .padding(.top, 40)
-                    .padding(.bottom, 200) // Increased bottom padding to ensure content is scrollable
-                }
+            // Layer 3: MediaCard Overlay (when episode row is focused)
+            if isEpisodeRowFocused, let episode = focusedEpisode {
+                overlayMediaCard(for: episode)
             }
         }
-        .onAppear {
-            print("👁️ [MediaDetailView] View appeared for: \(media.title)")
-            print("👁️ [MediaDetailView] authService: \(authService)")
-            print("👁️ [MediaDetailView] Has client: \(authService.currentClient != nil)")
-        }
+        .ignoresSafeArea()
         .task {
             print("⚙️ [MediaDetailView] Task started for: \(media.title)")
             await loadDetails()
@@ -355,6 +54,338 @@ struct MediaDetailView: View {
             VideoPlayerView(media: mediaToPlay)
                 .environmentObject(authService)
         }
+        .onAppear {
+            print("👁️ [MediaDetailView] View appeared for: \(media.title)")
+            print("👁️ [MediaDetailView] authService: \(authService)")
+            print("👁️ [MediaDetailView] Has client: \(authService.currentClient != nil)")
+        }
+    }
+
+    // MARK: - Layer Views
+
+    /// Layer 1: Background with blurred/dimmed artwork
+    private var backgroundLayer: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if let artURL = artworkURL {
+                CachedAsyncImage(url: artURL) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .blur(radius: 20)
+                } placeholder: {
+                    Color.black
+                }
+                .opacity(0.3)
+                .ignoresSafeArea()
+            }
+        }
+    }
+
+    /// Layer 2: Base content with hero info and bottom sheet
+    private var baseContentLayer: some View {
+        VStack(spacing: 0) {
+            // Hero info section (left side, upper part)
+            HStack {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Clear logo or title
+                    if let clearLogo = displayMedia.clearLogo, let logoURL = logoURL(for: clearLogo) {
+                        CachedAsyncImage(url: logoURL) { image in
+                            image
+                                .resizable()
+                                .scaledToFit()
+                        } placeholder: {
+                            Text(displayMedia.title)
+                                .font(.system(size: 60, weight: .heavy, design: .default))
+                                .foregroundColor(.white)
+                        }
+                        .frame(maxWidth: 600, maxHeight: 180, alignment: .leading)
+                    } else {
+                        Text(displayMedia.title)
+                            .font(.system(size: 60, weight: .heavy, design: .default))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .frame(maxWidth: 1000, alignment: .leading)
+                    }
+
+                    // Metadata chips
+                    HStack(spacing: 12) {
+                        Text(displayMedia.type == "movie" ? "Movie" : "TV Show")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundColor(.white)
+
+                        if displayMedia.audienceRating != nil || displayMedia.contentRating != nil || displayMedia.year != nil || displayMedia.duration != nil {
+                            ForEach(metadataComponents, id: \.self) { component in
+                                Text("·")
+                                    .foregroundColor(.white.opacity(0.7))
+                                Text(component)
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                    }
+
+                    // Summary
+                    if let summary = summaryText, !summary.isEmpty {
+                        Text(summary)
+                            .font(.system(size: 26, weight: .regular))
+                            .foregroundColor(.white.opacity(0.85))
+                            .lineLimit(4)
+                            .frame(maxWidth: 1200, alignment: .leading)
+                    }
+
+                    // Action buttons
+                    HStack(spacing: 20) {
+                        // Play button (primary)
+                        Button {
+                            handlePlayButton()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Text(playButtonLabel)
+                                    .font(.system(size: 24, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .buttonStyle(.clearGlass)
+
+                        // Shuffle button (shows/seasons only)
+                        if displayMedia.type == "show" && !seasons.isEmpty {
+                            Button {
+                                handleShufflePlay()
+                            } label: {
+                                Image(systemName: "shuffle")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(.white)
+                            }
+                            .buttonStyle(CardButtonStyle())
+                        }
+
+                        // Trailer button (movies only)
+                        if displayMedia.type == "movie" && !trailers.isEmpty {
+                            Button {
+                                handleTrailerPlay()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "play.rectangle")
+                                        .font(.system(size: 20))
+                                    Text("Trailer")
+                                        .font(.system(size: 22, weight: .medium))
+                                }
+                                .foregroundColor(.white)
+                            }
+                            .buttonStyle(CardButtonStyle())
+                        }
+
+                        // Mark as watched/unwatched
+                        Button {
+                            Task {
+                                await toggleWatched()
+                            }
+                        } label: {
+                            Image(systemName: displayMedia.isWatched ? "checkmark.circle.fill" : "checkmark.circle")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                        }
+                        .buttonStyle(CardButtonStyle())
+                    }
+                }
+                .padding(.leading, 60)
+                .padding(.top, 60)
+
+                Spacer()
+            }
+
+            Spacer()
+
+            // Bottom sheet with season selector and episode row
+            if displayMedia.type == "show" && !seasons.isEmpty {
+                bottomSheet
+            }
+        }
+    }
+
+    /// Bottom sheet containing season selector and episode row
+    private var bottomSheet: some View {
+        VStack(alignment: .leading, spacing: 30) {
+            // Season selector
+            if seasons.count > 1 {
+                seasonSelector
+            }
+
+            // Episode row
+            if !episodes.isEmpty {
+                episodeRow
+            }
+        }
+        .padding(.horizontal, 60)
+        .padding(.vertical, 40)
+        .background(
+            RoundedRectangle(cornerRadius: 40, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .opacity(0.8)
+                .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: -10)
+        )
+    }
+
+    /// Season selector horizontal scroll
+    private var seasonSelector: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Season")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(.white)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 20) {
+                    ForEach(seasons) { season in
+                        Button {
+                            selectedSeason = season
+                            Task {
+                                await loadEpisodesForSeason(season)
+                            }
+                        } label: {
+                            Text(season.title)
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(selectedSeason?.id == season.id ? .white : .white.opacity(0.6))
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedSeason?.id == season.id ? Color.beaconGradient : Color.clear)
+                                        .overlay(
+                                            Capsule()
+                                                .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
+                                        )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .tvOSScrollClipDisabled()
+        }
+    }
+
+    /// Episode row horizontal scroll
+    private var episodeRow: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Text("Episodes")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(.white)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 30) {
+                    ForEach(episodes) { episode in
+                        EpisodeCard(episode: episode) {
+                            playMedia = episode
+                        } onFocusChange: { focused in
+                            if focused {
+                                focusedEpisode = episode
+                                isEpisodeRowFocused = true
+                            } else if focusedEpisode?.id == episode.id {
+                                // If this was the focused episode and it lost focus, clear the overlay
+                                isEpisodeRowFocused = false
+                                focusedEpisode = nil
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 10)
+            }
+            .tvOSScrollClipDisabled()
+        }
+    }
+
+    /// Layer 3: MediaCard overlay (shown when episode is focused)
+    private func overlayMediaCard(for episode: PlexMetadata) -> some View {
+        ZStack {
+            // Dimming background
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+
+            // Large centered card
+            VStack(alignment: .leading, spacing: 20) {
+                // Episode thumbnail with gradient
+                ZStack(alignment: .bottomLeading) {
+                    if let thumbURL = episodeThumbnailURL(for: episode) {
+                        CachedAsyncImage(url: thumbURL) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(16/9, contentMode: .fill)
+                        } placeholder: {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .aspectRatio(16/9, contentMode: .fill)
+                        }
+                    }
+
+                    // Gradient overlay for text readability
+                    LinearGradient(
+                        colors: [
+                            Color.clear,
+                            Color.black.opacity(0.8)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .frame(height: 400)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                // Episode info
+                VStack(alignment: .leading, spacing: 12) {
+                    // Episode number
+                    if let season = episode.parentIndex, let episodeNum = episode.index {
+                        Text("S\(season), E\(episodeNum)")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+
+                    // Episode title
+                    Text(episode.title)
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+
+                    // Episode summary
+                    if let summary = episode.summary {
+                        Text(summary)
+                            .font(.system(size: 22))
+                            .foregroundColor(.white.opacity(0.8))
+                            .lineLimit(4)
+                    }
+
+                    // Duration and progress
+                    HStack(spacing: 12) {
+                        if let duration = episode.duration {
+                            Text(formatDuration(duration))
+                                .font(.system(size: 20))
+                                .foregroundColor(.gray)
+                        }
+
+                        if episode.progress > 0 && episode.progress < 0.98 {
+                            Text("•")
+                                .foregroundColor(.gray)
+                            Text("\(Int(episode.progress * 100))% watched")
+                                .font(.system(size: 20))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+                .padding(.horizontal, 40)
+                .padding(.bottom, 40)
+            }
+            .frame(width: 1000)
+            .background(
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .fill(.regularMaterial)
+                    .shadow(color: Color.beaconPurple.opacity(0.4), radius: 40, x: 0, y: 20)
+            )
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isEpisodeRowFocused)
     }
 
     private var displayMedia: PlexMetadata {
@@ -484,10 +515,13 @@ struct MediaDetailView: View {
             if media.type == "show" {
                 seasons = try await client.getChildren(ratingKey: ratingKey)
 
-                // If there's only one season, load episodes directly
-                if seasons.count == 1, let season = seasons.first, let seasonRatingKey = season.ratingKey {
-                    episodes = try await client.getChildren(ratingKey: seasonRatingKey)
-                    print("📺 [MediaDetailView] Loaded \(episodes.count) episodes for single-season show")
+                // Load episodes for the first season by default
+                if let firstSeason = seasons.first {
+                    selectedSeason = firstSeason
+                    if let seasonRatingKey = firstSeason.ratingKey {
+                        episodes = try await client.getChildren(ratingKey: seasonRatingKey)
+                        print("📺 [MediaDetailView] Loaded \(episodes.count) episodes for \(firstSeason.title)")
+                    }
                 }
 
                 // Try to get the onDeck episode for this show
@@ -540,6 +574,37 @@ struct MediaDetailView: View {
         }
     }
 
+    private func loadEpisodesForSeason(_ season: PlexMetadata) async {
+        guard let client = authService.currentClient,
+              let ratingKey = season.ratingKey else {
+            return
+        }
+
+        do {
+            episodes = try await client.getChildren(ratingKey: ratingKey)
+            print("📺 [MediaDetailView] Loaded \(episodes.count) episodes for \(season.title)")
+        } catch {
+            print("Error loading episodes for season: \(error)")
+            episodes = []
+        }
+    }
+
+    private func episodeThumbnailURL(for episode: PlexMetadata) -> URL? {
+        guard let server = authService.selectedServer,
+              let connection = server.connections.first,
+              let baseURL = connection.url,
+              let thumb = episode.thumb else {
+            return nil
+        }
+
+        var urlString = baseURL.absoluteString + thumb
+        if let token = server.accessToken {
+            urlString += "?X-Plex-Token=\(token)"
+        }
+
+        return URL(string: urlString)
+    }
+
     private func formatDuration(_ milliseconds: Int) -> String {
         let seconds = milliseconds / 1000
         let minutes = seconds / 60
@@ -550,6 +615,113 @@ struct MediaDetailView: View {
         } else {
             return "\(minutes)m"
         }
+    }
+}
+
+// MARK: - Episode Card
+
+/// Episode card for horizontal scrolling in bottom sheet
+struct EpisodeCard: View {
+    let episode: PlexMetadata
+    let action: () -> Void
+    let onFocusChange: (Bool) -> Void
+    @FocusState private var isFocused: Bool
+    @EnvironmentObject var authService: PlexAuthService
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Episode thumbnail
+                ZStack(alignment: .bottomLeading) {
+                    CachedAsyncImage(url: thumbnailURL) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(16/9, contentMode: .fill)
+                    } placeholder: {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                            .aspectRatio(16/9, contentMode: .fill)
+                            .overlay(
+                                Image(systemName: "tv")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.gray)
+                            )
+                    }
+                    .frame(width: 450, height: 253)
+
+                    // Progress bar
+                    if episode.progress > 0 && episode.progress < 0.98 {
+                        VStack {
+                            Spacer()
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(.regularMaterial)
+                                        .opacity(0.4)
+
+                                    Capsule()
+                                        .fill(Color.beaconGradient)
+                                        .frame(width: geometry.size.width * episode.progress)
+                                        .shadow(color: Color.beaconMagenta.opacity(0.5), radius: 4, x: 0, y: 0)
+                                }
+                            }
+                            .frame(height: 6)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
+                        }
+                    }
+
+                    // Play icon on focus
+                    if isFocused {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.white)
+                            .shadow(radius: 10)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous))
+
+                // Episode info
+                VStack(alignment: .leading, spacing: 6) {
+                    if let episodeNum = episode.index {
+                        Text("Episode \(episodeNum)")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+
+                    Text(episode.title)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .frame(width: 450, alignment: .leading)
+                }
+                .padding(.top, 12)
+            }
+        }
+        .buttonStyle(.plain)
+        .focused($isFocused)
+        .scaleEffect(isFocused ? 1.05 : 1.0)
+        .shadow(color: isFocused ? Color.beaconPurple.opacity(0.5) : .clear, radius: isFocused ? 20 : 0, x: 0, y: isFocused ? 10 : 0)
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)
+        .onChange(of: isFocused) { focused in
+            onFocusChange(focused)
+        }
+    }
+
+    private var thumbnailURL: URL? {
+        guard let server = authService.selectedServer,
+              let connection = server.connections.first,
+              let baseURL = connection.url,
+              let thumb = episode.thumb else {
+            return nil
+        }
+
+        var urlString = baseURL.absoluteString + thumb
+        if let token = server.accessToken {
+            urlString += "?X-Plex-Token=\(token)"
+        }
+
+        return URL(string: urlString)
     }
 }
 
