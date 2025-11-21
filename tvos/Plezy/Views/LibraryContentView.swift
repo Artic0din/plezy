@@ -141,53 +141,27 @@ struct LibraryContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        // Group items into rows of 5
-                        LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(stride(from: 0, to: filteredItems.count, by: 5)), id: \.self) { rowIndex in
-                                let rowItems = Array(filteredItems[rowIndex..<min(rowIndex + 5, filteredItems.count)])
-
-                                // Keep the horizontal rows un-clipped so rounded corners and
-                                // focus scaling aren't flattened along the top edge
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 12) {
-                                        ForEach(rowItems) { item in
-                                            MediaCard(media: item, config: .libraryGrid) {
-                                                print("🎯 [LibraryContent] Item tapped in \(library.title): \(item.title)")
-                                                print("🎯 [LibraryContent] Setting selectedMedia to trigger sheet")
-                                                selectedMedia = item
-                                                print("🎯 [LibraryContent] selectedMedia set to: \(String(describing: selectedMedia?.title))")
-                                            }
-                                            .padding(.vertical, 20) // Padding for focus scale
-                                        }
-                                    }
-                                    .padding(.horizontal, 40)
-                                }
-                                .tvOSScrollClipDisabled()
-                                // NOTE: Do not add .clipped() here - it cuts off the rounded corners
-                                // when cards scale up on focus. Cards need to extend beyond their
-                                // bounds to maintain their rounded appearance when focused.
-                            }
-
-                            // Load more indicator
-                            if hasMoreItems {
-                                VStack {
-                                    if isLoadingMore {
-                                        ProgressView()
-                                            .scaleEffect(1.2)
-                                            .tint(.white)
-                                    } else {
-                                        Color.clear.frame(height: 1)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 40)
-                                .onAppear {
-                                    Task {
-                                        await loadMoreContent()
-                                    }
-                                }
-                            }
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: GridWidthPreferenceKey.self, value: geometry.size.width)
                         }
+                        .frame(height: 0)
+
+                        GridLayoutView(
+                            items: filteredItems,
+                            hasMoreItems: hasMoreItems,
+                            isLoadingMore: isLoadingMore,
+                            onItemTapped: { item in
+                                print("🎯 [LibraryContent] Item tapped in \(library.title): \(item.title)")
+                                print("🎯 [LibraryContent] Setting selectedMedia to trigger sheet")
+                                selectedMedia = item
+                                print("🎯 [LibraryContent] selectedMedia set to: \(String(describing: selectedMedia?.title))")
+                            },
+                            onLoadMore: {
+                                Task {
+                                    await loadMoreContent()
+                                }
+                            }
+                        )
                         .padding(.top, 20)
                         .padding(.bottom, 80)
                     }
@@ -409,6 +383,90 @@ struct FilterButtonStyle: ButtonStyle {
             .focusable()
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(DesignTokens.Animation.quick.spring(), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Grid Layout
+
+/// Preference key for tracking available grid width
+struct GridWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 1920
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Grid layout view with 5 columns and consistent spacing
+struct GridLayoutView: View {
+    let items: [PlexMetadata]
+    let hasMoreItems: Bool
+    let isLoadingMore: Bool
+    let onItemTapped: (PlexMetadata) -> Void
+    let onLoadMore: () -> Void
+
+    @EnvironmentObject var authService: PlexAuthService
+    @State private var availableWidth: CGFloat = 1920
+
+    // Layout constants
+    private let columnsCount = 5
+    private let spacing: CGFloat = 48
+    private let aspectRatio: CGFloat = 201.0 / 358.0 // Height / Width from .libraryGrid
+
+    private var cardWidth: CGFloat {
+        // Calculate card width: availableWidth - edge padding - internal spacing
+        let totalHorizontalSpacing = (2 * spacing) + (CGFloat(columnsCount - 1) * spacing)
+        let availableForCards = availableWidth - totalHorizontalSpacing
+        return availableForCards / CGFloat(columnsCount)
+    }
+
+    private var cardHeight: CGFloat {
+        cardWidth * aspectRatio
+    }
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: columnsCount)
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
+            ForEach(items) { item in
+                MediaCard(
+                    media: item,
+                    config: .custom(
+                        width: cardWidth,
+                        height: cardHeight,
+                        showProgress: true,
+                        showLabel: .inside,
+                        showLogo: true,
+                        showEpisodeLabelBelow: false
+                    )
+                ) {
+                    onItemTapped(item)
+                }
+            }
+
+            // Load more indicator
+            if hasMoreItems {
+                VStack {
+                    if isLoadingMore {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .tint(.white)
+                    } else {
+                        Color.clear.frame(height: 1)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+                .onAppear {
+                    onLoadMore()
+                }
+            }
+        }
+        .padding(.horizontal, spacing)
+        .onPreferenceChange(GridWidthPreferenceKey.self) { width in
+            availableWidth = width
+        }
     }
 }
 
