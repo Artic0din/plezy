@@ -107,13 +107,12 @@ struct HomeView: View {
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // Spacer to position hero info block at the bottom of the screen
-                        // This creates space for the hero background to be visible
+                        // Spacer with scroll tracking - allows hero background to show while keeping CW visible
                         GeometryReader { geometry in
                             Color.clear
                                 .preference(key: ScrollOffsetPreferenceKey.self, value: geometry.frame(in: .named("scroll")).minY)
                         }
-                        .frame(height: 650)
+                        .frame(height: 420)
 
                         // Hero Info Block - positioned just above Continue Watching
                         if !recentlyAdded.isEmpty {
@@ -123,7 +122,7 @@ struct HomeView: View {
                                 )
                             }
                             .opacity(shouldShowHero ? 1 : 0)
-                            .padding(.bottom, 40) // Gap between hero info and Continue Watching label
+                            .padding(.bottom, 30) // Gap between hero info and Continue Watching label
                         }
 
                         // Continue Watching section
@@ -213,9 +212,9 @@ struct HomeView: View {
                         scrollOffset = value
                         // Hide hero when scrolled past Continue Watching section into rows below
                         // Threshold set to fade out when user scrolls into the hub rows below Continue Watching
-                        // (~1050 points accounts for spacer + hero info block + Continue Watching row)
+                        // (~820 points accounts for spacer + hero info block + Continue Watching row)
                         withAnimation(.easeInOut(duration: 0.4)) {
-                            shouldShowHero = value > -1050
+                            shouldShowHero = value > -820
                         }
                     }
                 }
