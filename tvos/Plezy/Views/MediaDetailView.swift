@@ -44,11 +44,6 @@ struct MediaDetailView: View {
             await loadDetails()
             print("⚙️ [MediaDetailView] Task completed for: \(media.title)")
         }
-        .sheet(item: $selectedSeason) { season in
-            let _ = print("📱 [MediaDetailView] Sheet presenting SeasonDetailView for: \(season.title)")
-            SeasonDetailView(season: season, show: displayMedia)
-                .environmentObject(authService)
-        }
         .fullScreenCover(item: $playMedia) { mediaToPlay in
             let _ = print("🎬 [MediaDetailView] Playing: \(mediaToPlay.title)")
             VideoPlayerView(media: mediaToPlay)
