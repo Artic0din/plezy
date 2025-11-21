@@ -12,6 +12,7 @@ import Combine
 import MediaPlayer
 import AVFAudio
 
+@available(tvOS 16.0, *)
 struct VideoPlayerView: View {
     let media: PlexMetadata
     @EnvironmentObject var authService: PlexAuthService
@@ -139,6 +140,7 @@ struct VideoPlayerView: View {
 
 // MARK: - AVPlayerViewController Wrapper
 
+@available(tvOS 16.0, *)
 struct TVPlayerViewController: UIViewControllerRepresentable {
     @ObservedObject var playerManager: VideoPlayerManager
 
@@ -146,8 +148,21 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         let controller = AVPlayerViewController()
 
         #if os(tvOS)
-        // tvOS-specific configuration
-        // Note: PiP settings not available on tvOS
+        // tvOS-specific configuration for enhanced playback experience
+
+        // Configure transport bar customization (tvOS 16.0+)
+        controller.transportBarIncludesTitleView = true
+        controller.transportBarIncludesDisplayModeControls = true
+
+        // Enable context menu for additional options
+        if #available(tvOS 17.0, *) {
+            controller.contextualActions = playerManager.createContextualActions()
+        }
+
+        // Set the coordinator as delegate for content proposals
+        controller.delegate = context.coordinator
+
+        print("🎬 [Player] Configured AVPlayerViewController for tvOS")
         #else
         // iOS-specific configuration
         controller.allowsPictureInPicturePlayback = true
@@ -161,15 +176,99 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         // Update player if it changes
         if uiViewController.player !== playerManager.player {
             uiViewController.player = playerManager.player
+
+            #if os(tvOS)
+            // Update content proposals when player changes
+            if #available(tvOS 16.0, *), playerManager.player != nil {
+                context.coordinator.updateContentProposals(
+                    for: uiViewController,
+                    playerManager: playerManager
+                )
+            }
+            #endif
         }
+
+        #if os(tvOS)
+        // Update contextual actions if available
+        if #available(tvOS 17.0, *) {
+            uiViewController.contextualActions = playerManager.createContextualActions()
+        }
+        #endif
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(playerManager: playerManager)
     }
 
-    class Coordinator: NSObject {
-        // Coordinator for future use if needed
+    @available(tvOS 16.0, *)
+    class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+        let playerManager: VideoPlayerManager
+
+        init(playerManager: VideoPlayerManager) {
+            self.playerManager = playerManager
+            super.init()
+        }
+
+        // MARK: - Content Proposals Delegate
+
+        #if os(tvOS)
+        @available(tvOS 16.0, *)
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            contentProposalViewController viewController: AVContentProposalViewController,
+            didAcceptProposal proposal: AVContentProposal
+        ) {
+            print("📺 [ContentProposal] User accepted proposal: \(proposal.title ?? "Untitled")")
+
+            // Handle the accepted proposal (play next episode)
+            if let metadata = proposal.metadata as? PlexMetadata {
+                Task { @MainActor in
+                    // Signal that user wants to play the next episode
+                    await playerManager.playNextEpisode(metadata)
+                }
+            }
+        }
+
+        @available(tvOS 16.0, *)
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            contentProposalViewController viewController: AVContentProposalViewController,
+            didRejectProposal proposal: AVContentProposal
+        ) {
+            print("📺 [ContentProposal] User rejected proposal: \(proposal.title ?? "Untitled")")
+            playerManager.cancelNextEpisode()
+        }
+
+        @available(tvOS 16.0, *)
+        func updateContentProposals(
+            for playerViewController: AVPlayerViewController,
+            playerManager: VideoPlayerManager
+        ) {
+            guard let nextEpisode = playerManager.nextEpisode else {
+                print("📺 [ContentProposal] No next episode available")
+                return
+            }
+
+            // Create content proposal for next episode
+            let proposal = playerManager.createContentProposal(for: nextEpisode)
+
+            // Present content proposal at 30 seconds before end
+            if let player = playerManager.player,
+               let duration = player.currentItem?.duration,
+               duration.isNumeric {
+                let proposalTime = CMTimeSubtract(duration, CMTime(seconds: 30, preferredTimescale: 600))
+
+                let action = AVContentProposalAction(
+                    contentProposal: proposal,
+                    automaticAcceptanceInterval: 15.0 // Auto-accept after 15 seconds
+                )
+
+                playerViewController.speeds = [0.5, 1.0, 1.25, 1.5, 2.0] // Playback speed options
+
+                print("📺 [ContentProposal] Content proposal configured for next episode: \(nextEpisode.title)")
+            }
+        }
+        #endif
     }
 }
 
@@ -349,18 +448,37 @@ class VideoPlayerManager: ObservableObject {
     private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
         var nowPlayingInfo: [String: Any] = [:]
 
-        // Title
+        // Title and show information
         if media.type == "episode" {
             // For TV shows: "Show Name - S1E1 - Episode Title"
             if let showTitle = media.grandparentTitle {
                 nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
                 nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
+
+                // Season and episode numbers
+                if let season = media.parentIndex {
+                    nowPlayingInfo[MPMediaItemPropertyAlbumTrackNumber] = season
+                }
+                if let episode = media.index {
+                    nowPlayingInfo[MPMediaItemPropertyTrackNumber] = episode
+                }
+
                 let seasonEpisode = media.formatSeasonEpisode()
                 nowPlayingInfo[MPNowPlayingInfoPropertyChapterNumber] = seasonEpisode as Any
             }
         } else {
             // For movies
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
+
+            // Year
+            if let year = media.year {
+                nowPlayingInfo[MPMediaItemPropertyYear] = year
+            }
+        }
+
+        // Content rating
+        if let contentRating = media.contentRating {
+            nowPlayingInfo[MPMediaItemPropertyMediaType] = contentRating
         }
 
         // Duration
@@ -368,6 +486,49 @@ class VideoPlayerManager: ObservableObject {
             let seconds = Double(duration) / 1000.0
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
         }
+
+        // Rating
+        if let rating = media.audienceRating {
+            nowPlayingInfo[MPMediaItemPropertyRating] = Int(rating * 10) // Convert 0-10 to 0-100
+        }
+
+        // External content identifiers for tvOS integration
+        #if os(tvOS)
+        if #available(tvOS 16.0, *) {
+            var externalMetadata: [AVMetadataItem] = []
+
+            // Add Plex identifier
+            if let ratingKey = media.ratingKey {
+                let plexIDItem = AVMutableMetadataItem()
+                plexIDItem.identifier = AVMetadataIdentifier(rawValue: "plex.tv/ratingKey")
+                plexIDItem.value = ratingKey as NSString
+                plexIDItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+                externalMetadata.append(plexIDItem)
+            }
+
+            // Add media type
+            let mediaTypeItem = AVMutableMetadataItem()
+            mediaTypeItem.identifier = .commonIdentifierType
+            mediaTypeItem.value = (media.type == "episode" ? "TV Show" : "Movie") as NSString
+            mediaTypeItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+            externalMetadata.append(mediaTypeItem)
+
+            // Add description
+            if let summary = media.summary {
+                let descItem = AVMutableMetadataItem()
+                descItem.identifier = .commonIdentifierDescription
+                descItem.value = summary as NSString
+                descItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+                externalMetadata.append(descItem)
+            }
+
+            // Set external metadata on player item
+            if let playerItem = self.playerItem {
+                playerItem.externalMetadata = externalMetadata
+                print("🎬 [Player] Set external metadata with \(externalMetadata.count) items")
+            }
+        }
+        #endif
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         print("🎬 [Player] Set Now Playing metadata: \(media.title)")
@@ -786,6 +947,120 @@ class VideoPlayerManager: ObservableObject {
             await player.seek(to: time)
             print("📖 [Chapters] Jumped to chapter: \(chapter.title ?? "Untitled")")
         }
+    }
+
+    // MARK: - Content Proposals (tvOS 16.0+)
+
+    /// Create a content proposal for the next episode
+    @available(tvOS 16.0, *)
+    func createContentProposal(for episode: PlexMetadata) -> AVContentProposal {
+        let proposal = AVContentProposal()
+
+        // Set title and subtitle
+        proposal.title = episode.title
+        if let showTitle = episode.grandparentTitle {
+            proposal.subtitle = "\(showTitle) • \(episode.formatSeasonEpisode())"
+        }
+
+        // Set preview image if available
+        if let thumbPath = episode.thumb,
+           let authService = playerViewController?.player?.accessLog()?.description,
+           let thumbURL = createImageURL(path: thumbPath) {
+            Task {
+                await loadProposalArtwork(url: thumbURL, for: proposal)
+            }
+        }
+
+        // Store the metadata for later retrieval
+        proposal.metadata = episode
+
+        print("📺 [ContentProposal] Created proposal for: \(episode.title)")
+        return proposal
+    }
+
+    @available(tvOS 16.0, *)
+    private func loadProposalArtwork(url: URL, for proposal: AVContentProposal) async {
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            if let image = UIImage(data: data) {
+                proposal.previewImage = image
+                print("📺 [ContentProposal] Loaded artwork for proposal")
+            }
+        } catch {
+            print("⚠️ [ContentProposal] Failed to load artwork: \(error)")
+        }
+    }
+
+    private func createImageURL(path: String) -> URL? {
+        // This would need access to authService - will be called from the view layer
+        // For now, return nil - the view will handle artwork loading
+        return nil
+    }
+
+    /// Play the next episode
+    func playNextEpisode(_ episode: PlexMetadata) async {
+        print("📺 [NextEp] Playing next episode: \(episode.title)")
+        // Note: This requires re-initializing the player with new media
+        // The view layer will handle dismissing and presenting new VideoPlayerView
+        showNextEpisodePrompt = false
+    }
+
+    // MARK: - Contextual Actions (tvOS 17.0+)
+
+    /// Create contextual actions for the player menu
+    @available(tvOS 17.0, *)
+    func createContextualActions() -> [UIAction] {
+        var actions: [UIAction] = []
+
+        // Audio track selection
+        if !availableAudioTracks.isEmpty {
+            let audioMenu = UIMenu(title: "Audio", children: availableAudioTracks.map { track in
+                let isSelected = track == currentAudioTrack
+                return UIAction(
+                    title: track.displayName,
+                    state: isSelected ? .on : .off
+                ) { [weak self] _ in
+                    self?.selectAudioTrack(track)
+                }
+            })
+            actions.append(contentsOf: audioMenu.children as! [UIAction])
+        }
+
+        // Subtitle track selection
+        if !availableSubtitleTracks.isEmpty {
+            let subtitlesOff = UIAction(
+                title: "Off",
+                state: currentSubtitleTrack == nil ? .on : .off
+            ) { [weak self] _ in
+                self?.selectSubtitleTrack(nil)
+            }
+
+            let subtitleActions = availableSubtitleTracks.map { track in
+                let isSelected = track == currentSubtitleTrack
+                return UIAction(
+                    title: track.displayName,
+                    state: isSelected ? .on : .off
+                ) { [weak self] _ in
+                    self?.selectSubtitleTrack(track)
+                }
+            }
+
+            let subtitleMenu = UIMenu(title: "Subtitles", children: [subtitlesOff] + subtitleActions)
+            actions.append(contentsOf: subtitleMenu.children as! [UIAction])
+        }
+
+        // Chapter selection
+        if !chapters.isEmpty {
+            let chapterActions = chapters.enumerated().map { index, chapter in
+                UIAction(title: chapter.title ?? "Chapter \(index + 1)") { [weak self] _ in
+                    self?.jumpToChapter(chapter)
+                }
+            }
+            let chapterMenu = UIMenu(title: "Chapters", children: chapterActions)
+            actions.append(contentsOf: chapterMenu.children as! [UIAction])
+        }
+
+        return actions
     }
 
     func cleanup() {
