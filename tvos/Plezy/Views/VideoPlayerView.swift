@@ -152,14 +152,8 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
 
         // Configure transport bar customization (tvOS 16.0+)
         controller.transportBarIncludesTitleView = true
-        controller.transportBarIncludesDisplayModeControls = true
 
-        // Enable context menu for additional options
-        if #available(tvOS 17.0, *) {
-            controller.contextualActions = playerManager.createContextualActions()
-        }
-
-        // Set the coordinator as delegate for content proposals
+        // Set the coordinator as delegate
         controller.delegate = context.coordinator
 
         print("🎬 [Player] Configured AVPlayerViewController for tvOS")
@@ -176,24 +170,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         // Update player if it changes
         if uiViewController.player !== playerManager.player {
             uiViewController.player = playerManager.player
-
-            #if os(tvOS)
-            // Update content proposals when player changes
-            if #available(tvOS 16.0, *), playerManager.player != nil {
-                context.coordinator.updateContentProposals(
-                    for: uiViewController,
-                    playerManager: playerManager
-                )
-            }
-            #endif
         }
-
-        #if os(tvOS)
-        // Update contextual actions if available
-        if #available(tvOS 17.0, *) {
-            uiViewController.contextualActions = playerManager.createContextualActions()
-        }
-        #endif
     }
 
     func makeCoordinator() -> Coordinator {
@@ -209,64 +186,45 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             super.init()
         }
 
-        // MARK: - Content Proposals Delegate
+        // MARK: - Info Tab Customization
 
         #if os(tvOS)
         @available(tvOS 16.0, *)
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
-            contentProposalViewController viewController: AVContentProposalViewController,
-            didAcceptProposal proposal: AVContentProposal
-        ) {
-            print("📺 [ContentProposal] User accepted proposal: \(proposal.title ?? "Untitled")")
+            infoViewControllersFor identifier: AVPlayerViewController.InfoViewID
+        ) -> [UIViewController] {
+            if identifier == .info {
+                // Return custom info view controller
+                let infoVC = CustomInfoViewController(playerManager: playerManager)
+                return [infoVC]
+            }
+            return []
+        }
 
-            // Handle the accepted proposal (play next episode)
-            if let metadata = proposal.metadata as? PlexMetadata {
+        @available(tvOS 16.0, *)
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            skipToNextItemWithCompletion completion: @escaping (Bool) -> Void
+        ) {
+            // Handle skip to next episode
+            if let nextEpisode = playerManager.nextEpisode {
                 Task { @MainActor in
-                    // Signal that user wants to play the next episode
-                    await playerManager.playNextEpisode(metadata)
+                    await playerManager.playNextEpisode(nextEpisode)
+                    completion(true)
                 }
+            } else {
+                completion(false)
             }
         }
 
         @available(tvOS 16.0, *)
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
-            contentProposalViewController viewController: AVContentProposalViewController,
-            didRejectProposal proposal: AVContentProposal
+            skipToPreviousItemWithCompletion completion: @escaping (Bool) -> Void
         ) {
-            print("📺 [ContentProposal] User rejected proposal: \(proposal.title ?? "Untitled")")
-            playerManager.cancelNextEpisode()
-        }
-
-        @available(tvOS 16.0, *)
-        func updateContentProposals(
-            for playerViewController: AVPlayerViewController,
-            playerManager: VideoPlayerManager
-        ) {
-            guard let nextEpisode = playerManager.nextEpisode else {
-                print("📺 [ContentProposal] No next episode available")
-                return
-            }
-
-            // Create content proposal for next episode
-            let proposal = playerManager.createContentProposal(for: nextEpisode)
-
-            // Present content proposal at 30 seconds before end
-            if let player = playerManager.player,
-               let duration = player.currentItem?.duration,
-               duration.isNumeric {
-                let proposalTime = CMTimeSubtract(duration, CMTime(seconds: 30, preferredTimescale: 600))
-
-                let action = AVContentProposalAction(
-                    contentProposal: proposal,
-                    automaticAcceptanceInterval: 15.0 // Auto-accept after 15 seconds
-                )
-
-                playerViewController.speeds = [0.5, 1.0, 1.25, 1.5, 2.0] // Playback speed options
-
-                print("📺 [ContentProposal] Content proposal configured for next episode: \(nextEpisode.title)")
-            }
+            // No previous item support
+            completion(false)
         }
         #endif
     }
@@ -423,6 +381,13 @@ class VideoPlayerManager: ObservableObject {
                 await fetchNextEpisode(client: client)
             }
 
+            // Configure skip intro if available (tvOS 16.0+)
+            #if os(tvOS)
+            if #available(tvOS 16.0, *) {
+                await configureSkipIntro(for: ratingKey, client: client)
+            }
+            #endif
+
             isLoading = false
 
         } catch {
@@ -448,37 +413,18 @@ class VideoPlayerManager: ObservableObject {
     private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
         var nowPlayingInfo: [String: Any] = [:]
 
-        // Title and show information
+        // Title and subtitle for tvOS display
         if media.type == "episode" {
-            // For TV shows: "Show Name - S1E1 - Episode Title"
+            // For TV shows:
+            // Title: Show Name
+            // Subtitle: Sx, Ex - Episode Name
             if let showTitle = media.grandparentTitle {
+                nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
                 nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
-                nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
-
-                // Season and episode numbers
-                if let season = media.parentIndex {
-                    nowPlayingInfo[MPMediaItemPropertyAlbumTrackNumber] = season
-                }
-                if let episode = media.index {
-                    nowPlayingInfo[MPMediaItemPropertyTrackNumber] = episode
-                }
-
-                let seasonEpisode = media.formatSeasonEpisode()
-                nowPlayingInfo[MPNowPlayingInfoPropertyChapterNumber] = seasonEpisode as Any
             }
         } else {
-            // For movies
+            // For movies: Title is the movie title
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
-
-            // Year
-            if let year = media.year {
-                nowPlayingInfo[MPMediaItemPropertyYear] = year
-            }
-        }
-
-        // Content rating
-        if let contentRating = media.contentRating {
-            nowPlayingInfo[MPMediaItemPropertyMediaType] = contentRating
         }
 
         // Duration
@@ -487,31 +433,34 @@ class VideoPlayerManager: ObservableObject {
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
         }
 
-        // Rating
-        if let rating = media.audienceRating {
-            nowPlayingInfo[MPMediaItemPropertyRating] = Int(rating * 10) // Convert 0-10 to 0-100
-        }
-
         // External content identifiers for tvOS integration
         #if os(tvOS)
         if #available(tvOS 16.0, *) {
             var externalMetadata: [AVMetadataItem] = []
 
-            // Add Plex identifier
-            if let ratingKey = media.ratingKey {
-                let plexIDItem = AVMutableMetadataItem()
-                plexIDItem.identifier = AVMetadataIdentifier(rawValue: "plex.tv/ratingKey")
-                plexIDItem.value = ratingKey as NSString
-                plexIDItem.dataType = kCMMetadataBaseDataType_UTF8 as String
-                externalMetadata.append(plexIDItem)
+            // Set title
+            let titleItem = AVMutableMetadataItem()
+            titleItem.identifier = .commonIdentifierTitle
+            if media.type == "episode", let showTitle = media.grandparentTitle {
+                titleItem.value = showTitle as NSString
+            } else {
+                titleItem.value = media.title as NSString
             }
+            titleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+            externalMetadata.append(titleItem)
 
-            // Add media type
-            let mediaTypeItem = AVMutableMetadataItem()
-            mediaTypeItem.identifier = .commonIdentifierType
-            mediaTypeItem.value = (media.type == "episode" ? "TV Show" : "Movie") as NSString
-            mediaTypeItem.dataType = kCMMetadataBaseDataType_UTF8 as String
-            externalMetadata.append(mediaTypeItem)
+            // Set subtitle for TV episodes: "Sx, Ex - Episode Name"
+            if media.type == "episode" {
+                let subtitleItem = AVMutableMetadataItem()
+                subtitleItem.identifier = .iTunesMetadataTrackSubTitle
+                if let season = media.parentIndex, let episode = media.index {
+                    subtitleItem.value = "S\(season), E\(episode) - \(media.title)" as NSString
+                } else {
+                    subtitleItem.value = media.title as NSString
+                }
+                subtitleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+                externalMetadata.append(subtitleItem)
+            }
 
             // Add description
             if let summary = media.summary {
@@ -949,52 +898,35 @@ class VideoPlayerManager: ObservableObject {
         }
     }
 
-    // MARK: - Content Proposals (tvOS 16.0+)
+    // MARK: - Skip Intro (tvOS 16.0+)
 
-    /// Create a content proposal for the next episode
+    /// Configure skip intro using interstitial time ranges
     @available(tvOS 16.0, *)
-    func createContentProposal(for episode: PlexMetadata) -> AVContentProposal {
-        let proposal = AVContentProposal()
-
-        // Set title and subtitle
-        proposal.title = episode.title
-        if let showTitle = episode.grandparentTitle {
-            proposal.subtitle = "\(showTitle) • \(episode.formatSeasonEpisode())"
-        }
-
-        // Set preview image if available
-        if let thumbPath = episode.thumb,
-           let authService = playerViewController?.player?.accessLog()?.description,
-           let thumbURL = createImageURL(path: thumbPath) {
-            Task {
-                await loadProposalArtwork(url: thumbURL, for: proposal)
-            }
-        }
-
-        // Store the metadata for later retrieval
-        proposal.metadata = episode
-
-        print("📺 [ContentProposal] Created proposal for: \(episode.title)")
-        return proposal
-    }
-
-    @available(tvOS 16.0, *)
-    private func loadProposalArtwork(url: URL, for proposal: AVContentProposal) async {
+    private func configureSkipIntro(for ratingKey: String, client: PlexAPIClient) async {
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let image = UIImage(data: data) {
-                proposal.previewImage = image
-                print("📺 [ContentProposal] Loaded artwork for proposal")
+            // Fetch skip intro data from Plex
+            let markers = try await client.getMediaMarkers(ratingKey: ratingKey)
+
+            // Find intro marker
+            if let introMarker = markers.first(where: { $0.type == "intro" }) {
+                let startTime = CMTime(seconds: introMarker.start, preferredTimescale: 600)
+                let endTime = CMTime(seconds: introMarker.end, preferredTimescale: 600)
+                let duration = CMTimeSubtract(endTime, startTime)
+
+                let timeRange = CMTimeRange(start: startTime, duration: duration)
+
+                // Create interstitial time range for skip intro
+                #if os(tvOS)
+                if let playerItem = self.playerItem {
+                    let interstitial = AVInterstitialTimeRange(timeRange: timeRange)
+                    playerItem.interstitialTimeRanges = [interstitial]
+                    print("⏩ [SkipIntro] Configured skip intro at \(introMarker.start)s - \(introMarker.end)s")
+                }
+                #endif
             }
         } catch {
-            print("⚠️ [ContentProposal] Failed to load artwork: \(error)")
+            print("⚠️ [SkipIntro] Failed to fetch intro markers: \(error)")
         }
-    }
-
-    private func createImageURL(path: String) -> URL? {
-        // This would need access to authService - will be called from the view layer
-        // For now, return nil - the view will handle artwork loading
-        return nil
     }
 
     /// Play the next episode
@@ -1003,64 +935,6 @@ class VideoPlayerManager: ObservableObject {
         // Note: This requires re-initializing the player with new media
         // The view layer will handle dismissing and presenting new VideoPlayerView
         showNextEpisodePrompt = false
-    }
-
-    // MARK: - Contextual Actions (tvOS 17.0+)
-
-    /// Create contextual actions for the player menu
-    @available(tvOS 17.0, *)
-    func createContextualActions() -> [UIAction] {
-        var actions: [UIAction] = []
-
-        // Audio track selection
-        if !availableAudioTracks.isEmpty {
-            let audioMenu = UIMenu(title: "Audio", children: availableAudioTracks.map { track in
-                let isSelected = track == currentAudioTrack
-                return UIAction(
-                    title: track.displayName,
-                    state: isSelected ? .on : .off
-                ) { [weak self] _ in
-                    self?.selectAudioTrack(track)
-                }
-            })
-            actions.append(contentsOf: audioMenu.children as! [UIAction])
-        }
-
-        // Subtitle track selection
-        if !availableSubtitleTracks.isEmpty {
-            let subtitlesOff = UIAction(
-                title: "Off",
-                state: currentSubtitleTrack == nil ? .on : .off
-            ) { [weak self] _ in
-                self?.selectSubtitleTrack(nil)
-            }
-
-            let subtitleActions = availableSubtitleTracks.map { track in
-                let isSelected = track == currentSubtitleTrack
-                return UIAction(
-                    title: track.displayName,
-                    state: isSelected ? .on : .off
-                ) { [weak self] _ in
-                    self?.selectSubtitleTrack(track)
-                }
-            }
-
-            let subtitleMenu = UIMenu(title: "Subtitles", children: [subtitlesOff] + subtitleActions)
-            actions.append(contentsOf: subtitleMenu.children as! [UIAction])
-        }
-
-        // Chapter selection
-        if !chapters.isEmpty {
-            let chapterActions = chapters.enumerated().map { index, chapter in
-                UIAction(title: chapter.title ?? "Chapter \(index + 1)") { [weak self] _ in
-                    self?.jumpToChapter(chapter)
-                }
-            }
-            let chapterMenu = UIMenu(title: "Chapters", children: chapterActions)
-            actions.append(contentsOf: chapterMenu.children as! [UIAction])
-        }
-
-        return actions
     }
 
     func cleanup() {
@@ -1195,6 +1069,191 @@ struct NextEpisodeOverlay: View {
             urlString += "?X-Plex-Token=\(token)"
         }
 
+        return URL(string: urlString)
+    }
+}
+
+// MARK: - Custom Info View Controller
+
+@available(tvOS 16.0, *)
+class CustomInfoViewController: UIViewController {
+    let playerManager: VideoPlayerManager
+
+    init(playerManager: VideoPlayerManager) {
+        self.playerManager = playerManager
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // Create SwiftUI view for the info tab
+        let infoView = InfoTabView(media: playerManager.media)
+        let hostingController = UIHostingController(rootView: infoView)
+
+        addChild(hostingController)
+        view.addSubview(hostingController.view)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+
+        hostingController.didMove(toParent: self)
+    }
+}
+
+// MARK: - Info Tab SwiftUI View
+
+struct InfoTabView: View {
+    let media: PlexMetadata
+    @EnvironmentObject var authService: PlexAuthService
+
+    var body: some View {
+        GeometryReader { geometry in
+            if media.type == "episode" {
+                // TV Show Episode: Show episode thumbnail
+                episodeInfoView
+            } else {
+                // Movie: Show fanart background with logo overlay
+                movieInfoView
+            }
+        }
+    }
+
+    private var episodeInfoView: some View {
+        VStack(spacing: 20) {
+            // Episode thumbnail
+            if let thumb = media.thumb, let thumbURL = createImageURL(path: thumb) {
+                CachedAsyncImage(url: thumbURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .frame(maxWidth: 600)
+                        .cornerRadius(12)
+                } placeholder: {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 600, height: 338)
+                        .cornerRadius(12)
+                }
+            }
+
+            // Episode title
+            Text(media.title)
+                .font(.title)
+                .foregroundColor(.white)
+
+            // Season and episode info
+            if let season = media.parentIndex, let episode = media.index {
+                Text("Season \(season), Episode \(episode)")
+                    .font(.headline)
+                    .foregroundColor(.gray)
+            }
+
+            // Synopsis
+            if let summary = media.summary {
+                Text(summary)
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+        }
+        .padding(40)
+    }
+
+    private var movieInfoView: some View {
+        ZStack {
+            // Fanart background
+            if let art = media.art, let artURL = createImageURL(path: art) {
+                CachedAsyncImage(url: artURL) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .blur(radius: 20)
+                        .opacity(0.5)
+                } placeholder: {
+                    Color.black
+                }
+                .ignoresSafeArea()
+            }
+
+            // Gradient overlay
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.black.opacity(0.7),
+                    Color.black.opacity(0.9)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                // Logo or title
+                if let clearLogo = media.clearLogo, let logoURL = createImageURL(path: clearLogo) {
+                    CachedAsyncImage(url: logoURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 500, maxHeight: 200)
+                    } placeholder: {
+                        Text(media.title)
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                } else {
+                    Text(media.title)
+                        .font(.system(size: 48, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                // Movie details
+                HStack(spacing: 15) {
+                    if let year = media.year {
+                        Text(String(year))
+                            .foregroundColor(.gray)
+                    }
+                    if let rating = media.contentRating {
+                        Text(rating)
+                            .foregroundColor(.gray)
+                    }
+                    if let duration = media.duration {
+                        let minutes = duration / 60000
+                        Text("\(minutes) min")
+                            .foregroundColor(.gray)
+                    }
+                }
+                .font(.headline)
+
+                // Synopsis
+                if let summary = media.summary {
+                    Text(summary)
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 80)
+                        .lineLimit(5)
+                }
+            }
+            .padding(40)
+        }
+    }
+
+    private func createImageURL(path: String) -> URL? {
+        guard let client = authService.currentClient else { return nil }
+        var urlString = client.baseURL.absoluteString + path
+        if let token = client.accessToken {
+            urlString += "?X-Plex-Token=\(token)"
+        }
         return URL(string: urlString)
     }
 }

@@ -442,6 +442,21 @@ class PlexAPIClient {
         return container.chapters ?? []
     }
 
+    // MARK: - Media Markers (Skip Intro, Credits, etc.)
+
+    func getMediaMarkers(ratingKey: String) async throws -> [PlexMediaMarker] {
+        struct MarkerResponse: Codable {
+            let MediaContainer: MarkerContainer
+
+            struct MarkerContainer: Codable {
+                let Marker: [PlexMediaMarker]?
+            }
+        }
+
+        let response: MarkerResponse = try await request(path: "/library/metadata/\(ratingKey)")
+        return response.MediaContainer.Marker ?? []
+    }
+
     enum PlaybackState: String {
         case playing
         case paused
