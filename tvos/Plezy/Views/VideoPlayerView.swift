@@ -550,7 +550,7 @@ class VideoPlayerManager: ObservableObject {
 
         // Play command
         commandCenter.playCommand.isEnabled = true
-        commandCenter.playCommand.addTarget { [weak self] _ in
+        commandCenter.playCommand.addTarget { _ in
             player.play()
             print("🎮 [RemoteCommands] Play command executed")
             return .success
@@ -558,7 +558,7 @@ class VideoPlayerManager: ObservableObject {
 
         // Pause command
         commandCenter.pauseCommand.isEnabled = true
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
+        commandCenter.pauseCommand.addTarget { _ in
             player.pause()
             print("🎮 [RemoteCommands] Pause command executed")
             return .success
@@ -566,7 +566,7 @@ class VideoPlayerManager: ObservableObject {
 
         // Toggle play/pause
         commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+        commandCenter.togglePlayPauseCommand.addTarget { _ in
             if player.rate > 0 {
                 player.pause()
                 print("🎮 [RemoteCommands] Toggle pause executed")
@@ -580,7 +580,7 @@ class VideoPlayerManager: ObservableObject {
         // Skip forward (15 seconds)
         commandCenter.skipForwardCommand.isEnabled = true
         commandCenter.skipForwardCommand.preferredIntervals = [15]
-        commandCenter.skipForwardCommand.addTarget { [weak self] event in
+        commandCenter.skipForwardCommand.addTarget { event in
             if let skipEvent = event as? MPSkipIntervalCommandEvent {
                 let currentTime = player.currentTime()
                 let newTime = CMTimeAdd(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
@@ -594,7 +594,7 @@ class VideoPlayerManager: ObservableObject {
         // Skip backward (15 seconds)
         commandCenter.skipBackwardCommand.isEnabled = true
         commandCenter.skipBackwardCommand.preferredIntervals = [15]
-        commandCenter.skipBackwardCommand.addTarget { [weak self] event in
+        commandCenter.skipBackwardCommand.addTarget { event in
             if let skipEvent = event as? MPSkipIntervalCommandEvent {
                 let currentTime = player.currentTime()
                 let newTime = CMTimeSubtract(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
@@ -843,8 +843,8 @@ class VideoPlayerManager: ObservableObject {
 
             // Add artwork if available
             if let thumbPath = chapter.thumb,
-               let server = playerViewController?.player?.currentItem?.accessLog()?.description,
-               let thumbURL = URL(string: thumbPath) {
+               let _ = playerViewController?.player?.currentItem?.accessLog()?.description,
+               let _ = URL(string: thumbPath) {
                 let artworkItem = AVMutableMetadataItem()
                 artworkItem.identifier = .commonIdentifierArtwork
                 // Note: Would need to fetch image data for full implementation
