@@ -301,7 +301,7 @@ struct MediaDetailView: View {
                                     }
                                 }
                             } else {
-                                // Show season cards for multi-season shows
+                                // Show season grid for multi-season shows
                                 VStack(alignment: .leading, spacing: 20) {
                                     Text("Seasons")
                                         .font(.system(size: 32, weight: .bold))
@@ -313,17 +313,18 @@ struct MediaDetailView: View {
                                             )
                                         )
 
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        LazyHStack(spacing: 30) {
-                                            ForEach(seasons) { season in
-                                                SeasonCard(season: season) {
-                                                    selectedSeason = season
-                                                }
-                                                .padding(.vertical, 40)
-                                            }
-                                        }
+                                    // Grid layout for seasons
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(key: SeasonGridWidthPreferenceKey.self, value: geometry.size.width)
                                     }
-                                    .tvOSScrollClipDisabled()
+                                    .frame(height: 0)
+
+                                    SeasonGridView(
+                                        seasons: seasons,
+                                        onSeasonTapped: { season in
+                                            selectedSeason = season
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -552,8 +553,67 @@ struct MediaDetailView: View {
     }
 }
 
+// MARK: - Season Grid Layout
+
+/// Preference key for tracking available grid width
+struct SeasonGridWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 1920
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Grid layout view with 5 columns and consistent spacing for seasons
+struct SeasonGridView: View {
+    let seasons: [PlexMetadata]
+    let onSeasonTapped: (PlexMetadata) -> Void
+
+    @EnvironmentObject var authService: PlexAuthService
+    @State private var availableWidth: CGFloat = 1920
+
+    // Layout constants
+    private let columnsCount = 5
+    private let spacing: CGFloat = 48
+    private let aspectRatio: CGFloat = 3.0 / 2.0 // 2:3 poster ratio (height/width)
+
+    private var cardWidth: CGFloat {
+        // Calculate card width: availableWidth - edge padding - internal spacing
+        let totalHorizontalSpacing = (CGFloat(columnsCount - 1) * spacing)
+        let availableForCards = availableWidth - totalHorizontalSpacing
+        return availableForCards / CGFloat(columnsCount)
+    }
+
+    private var cardHeight: CGFloat {
+        cardWidth * aspectRatio
+    }
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: columnsCount)
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
+            ForEach(seasons) { season in
+                SeasonCard(
+                    season: season,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    action: {
+                        onSeasonTapped(season)
+                    }
+                )
+            }
+        }
+        .onPreferenceChange(SeasonGridWidthPreferenceKey.self) { width in
+            availableWidth = width
+        }
+    }
+}
+
 struct SeasonCard: View {
     let season: PlexMetadata
+    let cardWidth: CGFloat
+    let cardHeight: CGFloat
     let action: () -> Void
     @FocusState private var isFocused: Bool
     @EnvironmentObject var authService: PlexAuthService
@@ -575,7 +635,7 @@ struct SeasonCard: View {
                                 .foregroundColor(.gray)
                         )
                 }
-                .frame(width: 400, height: 600)
+                .frame(width: cardWidth, height: cardHeight)
                 .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge, style: .continuous)
@@ -592,18 +652,20 @@ struct SeasonCard: View {
                         )
                 )
                 .shadow(color: isFocused ? Color.beaconPurple.opacity(0.5) : .black.opacity(0.5), radius: isFocused ? 35 : 18, x: 0, y: isFocused ? 18 : 10)
+                .scaleEffect(isFocused ? 1.05 : 1.0)
+                .animation(DesignTokens.Animation.quick.spring(), value: isFocused)
 
                 Text(season.title)
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(2)
-                    .frame(width: 400, alignment: .leading)
+                    .frame(width: cardWidth, alignment: .leading)
 
                 if let leafCount = season.leafCount {
                     Text("\(leafCount) episode\(leafCount == 1 ? "" : "s")")
                         .font(.system(size: 20))
                         .foregroundColor(.gray)
-                        .frame(width: 400, alignment: .leading)
+                        .frame(width: cardWidth, alignment: .leading)
                 }
             }
         }
