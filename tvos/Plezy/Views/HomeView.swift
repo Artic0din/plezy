@@ -107,23 +107,26 @@ struct HomeView: View {
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // Spacer with scroll tracking - allows hero background to show while keeping CW visible
-                        GeometryReader { geometry in
-                            Color.clear
-                                .preference(key: ScrollOffsetPreferenceKey.self, value: geometry.frame(in: .named("scroll")).minY)
-                        }
-                        .frame(height: 420)
-
-                        // Hero Info Block - positioned just above Continue Watching
-                        if !recentlyAdded.isEmpty {
-                            VStack(alignment: .leading, spacing: 24) {
-                                FullScreenHeroOverlay(
-                                    item: recentlyAdded[currentHeroIndex]
-                                )
+                        // Spacer with hero info overlay - CW position locked regardless of synopsis length
+                        ZStack(alignment: .bottomLeading) {
+                            // Scroll tracking layer
+                            GeometryReader { geometry in
+                                Color.clear
+                                    .preference(key: ScrollOffsetPreferenceKey.self, value: geometry.frame(in: .named("scroll")).minY)
                             }
-                            .opacity(shouldShowHero ? 1 : 0)
-                            .padding(.bottom, 30) // Gap between hero info and Continue Watching label
+
+                            // Hero Info Block - overlaid at bottom, grows upward
+                            if !recentlyAdded.isEmpty {
+                                VStack(alignment: .leading, spacing: 24) {
+                                    FullScreenHeroOverlay(
+                                        item: recentlyAdded[currentHeroIndex]
+                                    )
+                                }
+                                .opacity(shouldShowHero ? 1 : 0)
+                                .padding(.bottom, 30) // Gap from bottom of spacer to CW
+                            }
                         }
+                        .frame(height: 900) // Fixed height - Continue Watching position locked
 
                         // Continue Watching section
                         if !onDeck.isEmpty {
@@ -212,9 +215,9 @@ struct HomeView: View {
                         scrollOffset = value
                         // Hide hero when scrolled past Continue Watching section into rows below
                         // Threshold set to fade out when user scrolls into the hub rows below Continue Watching
-                        // (~820 points accounts for spacer + hero info block + Continue Watching row)
+                        // (~1200 points accounts for spacer (900) + Continue Watching row (~300))
                         withAnimation(.easeInOut(duration: 0.4)) {
-                            shouldShowHero = value > -820
+                            shouldShowHero = value > -1200
                         }
                     }
                 }
