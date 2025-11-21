@@ -95,36 +95,36 @@ struct HomeView: View {
     private var fullScreenHeroLayout: some View {
         ZStack {
             // Layer 1: Full-screen hero background (recently added)
-            if !recentlyAdded.isEmpty && shouldShowHero {
+            if !recentlyAdded.isEmpty {
                 FullScreenHeroBackground(
                     items: recentlyAdded,
                     currentIndex: $currentHeroIndex
                 )
+                .opacity(shouldShowHero ? 1 : 0)
             }
 
-            // Layer 2: Hero overlay with metadata (recently added)
-            if !recentlyAdded.isEmpty && shouldShowHero {
-                VStack {
-                    Spacer()
-
-                    FullScreenHeroOverlay(
-                        item: recentlyAdded[currentHeroIndex]
-                    )
-                    .padding(.bottom, 580)
-                }
-            }
-
-            // Layer 3: Scrollable content area
+            // Layer 2: Scrollable content area with hero info block
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // Spacer to push content down - positioned to avoid overlapping hero synopsis
-                        // Height balanced to keep Continue Watching visible while providing space for hero text
+                        // Spacer to position hero info block at the bottom of the screen
+                        // This creates space for the hero background to be visible
                         GeometryReader { geometry in
                             Color.clear
                                 .preference(key: ScrollOffsetPreferenceKey.self, value: geometry.frame(in: .named("scroll")).minY)
                         }
-                        .frame(height: 680) // Increased to prevent overlap with hero synopsis text
+                        .frame(height: 650)
+
+                        // Hero Info Block - positioned just above Continue Watching
+                        if !recentlyAdded.isEmpty {
+                            VStack(alignment: .leading, spacing: 24) {
+                                FullScreenHeroOverlay(
+                                    item: recentlyAdded[currentHeroIndex]
+                                )
+                            }
+                            .opacity(shouldShowHero ? 1 : 0)
+                            .padding(.bottom, 40) // Gap between hero info and Continue Watching label
+                        }
 
                         // Continue Watching section
                         if !onDeck.isEmpty {
@@ -212,10 +212,10 @@ struct HomeView: View {
                     .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
                         scrollOffset = value
                         // Hide hero when scrolled past Continue Watching section into rows below
-                        // Threshold set to fade out when Continue Watching section is leaving the screen
-                        // (~850 points accounts for spacer + Continue Watching row height)
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            shouldShowHero = value > -850
+                        // Threshold set to fade out when user scrolls into the hub rows below Continue Watching
+                        // (~1050 points accounts for spacer + hero info block + Continue Watching row)
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            shouldShowHero = value > -1050
                         }
                     }
                 }
@@ -527,7 +527,7 @@ struct FullScreenHeroOverlay: View {
                 }
             }
 
-            // Description
+            // Synopsis - grows upward when long, bottom stays anchored near Continue Watching
             if let summary = item.summary {
                 if item.type == "episode", let parentIndex = item.parentIndex, let index = item.index {
                     (Text("S\(parentIndex), E\(index): ")
@@ -536,14 +536,14 @@ struct FullScreenHeroOverlay: View {
                     Text(summary)
                         .font(.system(size: 28, weight: .regular, design: .default))
                         .foregroundColor(.white.opacity(0.9)))
-                        .lineLimit(3)
+                        .lineLimit(nil) // Allow unlimited wrapping
                         .frame(maxWidth: 1000, alignment: .leading)
                         .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 2)
                 } else {
                     Text(summary)
                         .font(.system(size: 28, weight: .regular, design: .default))
                         .foregroundColor(.white.opacity(0.9))
-                        .lineLimit(3)
+                        .lineLimit(nil) // Allow unlimited wrapping
                         .frame(maxWidth: 1000, alignment: .leading)
                         .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 2)
                 }
