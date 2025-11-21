@@ -252,12 +252,19 @@ struct MediaDetailView: View {
                                 .padding(.horizontal, 24)
                                 .padding(.vertical, 12)
                                 .background(
-                                    Capsule()
-                                        .fill(selectedSeason?.id == season.id ? Color.beaconGradient : Color.clear)
-                                        .overlay(
+                                    ZStack {
+                                        Capsule()
+                                            .fill(Color.clear)
+
+                                        if selectedSeason?.id == season.id {
                                             Capsule()
-                                                .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
-                                        )
+                                                .fill(Color.beaconGradient)
+                                        }
+                                    }
+                                    .overlay(
+                                        Capsule()
+                                            .strokeBorder(Color.white.opacity(0.3), lineWidth: 1)
+                                    )
                                 )
                         }
                         .buttonStyle(.plain)
@@ -275,26 +282,45 @@ struct MediaDetailView: View {
                 .font(.system(size: 28, weight: .bold))
                 .foregroundColor(.white)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 30) {
-                    ForEach(episodes) { episode in
-                        EpisodeCard(episode: episode) {
-                            playMedia = episode
-                        } onFocusChange: { focused in
-                            if focused {
-                                focusedEpisode = episode
-                                isEpisodeRowFocused = true
-                            } else if focusedEpisode?.id == episode.id {
-                                // If this was the focused episode and it lost focus, clear the overlay
-                                isEpisodeRowFocused = false
-                                focusedEpisode = nil
+            ScrollViewReader { scrollProxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 30) {
+                        ForEach(episodes) { episode in
+                            EpisodeCard(episode: episode) {
+                                playMedia = episode
+                            } onFocusChange: { focused in
+                                if focused {
+                                    focusedEpisode = episode
+                                    isEpisodeRowFocused = true
+                                } else if focusedEpisode?.id == episode.id {
+                                    // If this was the focused episode and it lost focus, clear the overlay
+                                    isEpisodeRowFocused = false
+                                    focusedEpisode = nil
+                                }
                             }
+                            .id(episode.id)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                }
+                .tvOSScrollClipDisabled()
+                .onAppear {
+                    // Scroll to first unwatched episode
+                    if let firstUnwatched = episodes.first(where: { !$0.isWatched }) {
+                        withAnimation {
+                            scrollProxy.scrollTo(firstUnwatched.id, anchor: .leading)
                         }
                     }
                 }
-                .padding(.vertical, 10)
+                .onChange(of: episodes) { newEpisodes in
+                    // Scroll to first unwatched episode when episodes change (season change)
+                    if let firstUnwatched = newEpisodes.first(where: { !$0.isWatched }) {
+                        withAnimation {
+                            scrollProxy.scrollTo(firstUnwatched.id, anchor: .leading)
+                        }
+                    }
+                }
             }
-            .tvOSScrollClipDisabled()
         }
     }
 
