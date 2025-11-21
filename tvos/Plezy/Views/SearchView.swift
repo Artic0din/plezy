@@ -114,17 +114,19 @@ struct SearchView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [
-                            GridItem(.adaptive(minimum: 336, maximum: 336), spacing: 24)
-                        ], spacing: 40) {
-                            ForEach(searchResults) { item in
-                                MediaCard(media: item, config: .libraryGrid) {
-                                    selectedMedia = item
-                                }
-                                .padding(.vertical, 40) // Padding for focus scale
-                            }
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: SearchGridWidthPreferenceKey.self, value: geometry.size.width)
                         }
-                        .padding(80)
+                        .frame(height: 0)
+
+                        SearchGridLayoutView(
+                            items: searchResults,
+                            onItemTapped: { item in
+                                selectedMedia = item
+                            }
+                        )
+                        .padding(.top, 20)
+                        .padding(.bottom, 80)
                     }
                 }
             }
@@ -157,6 +159,69 @@ struct SearchView: View {
         }
 
         isSearching = false
+    }
+}
+
+// MARK: - Search Grid Layout
+
+/// Preference key for tracking available grid width
+struct SearchGridWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 1920
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Grid layout view with 5 columns and consistent spacing for search results
+struct SearchGridLayoutView: View {
+    let items: [PlexMetadata]
+    let onItemTapped: (PlexMetadata) -> Void
+
+    @EnvironmentObject var authService: PlexAuthService
+    @State private var availableWidth: CGFloat = 1920
+
+    // Layout constants
+    private let columnsCount = 5
+    private let spacing: CGFloat = 48
+    private let aspectRatio: CGFloat = 201.0 / 358.0 // Height / Width from .libraryGrid
+
+    private var cardWidth: CGFloat {
+        // Calculate card width: availableWidth - edge padding - internal spacing
+        let totalHorizontalSpacing = (2 * spacing) + (CGFloat(columnsCount - 1) * spacing)
+        let availableForCards = availableWidth - totalHorizontalSpacing
+        return availableForCards / CGFloat(columnsCount)
+    }
+
+    private var cardHeight: CGFloat {
+        cardWidth * aspectRatio
+    }
+
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: columnsCount)
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
+            ForEach(items) { item in
+                MediaCard(
+                    media: item,
+                    config: .custom(
+                        width: cardWidth,
+                        height: cardHeight,
+                        showProgress: true,
+                        showLabel: .inside,
+                        showLogo: true,
+                        showEpisodeLabelBelow: false
+                    )
+                ) {
+                    onItemTapped(item)
+                }
+            }
+        }
+        .padding(.horizontal, spacing)
+        .onPreferenceChange(SearchGridWidthPreferenceKey.self) { width in
+            availableWidth = width
+        }
     }
 }
 
