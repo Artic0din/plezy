@@ -531,12 +531,9 @@ struct FullScreenHeroOverlay: View {
             // Synopsis - grows upward when long, bottom stays anchored near Continue Watching
             if let summary = item.summary {
                 if item.type == "episode", let parentIndex = item.parentIndex, let index = item.index {
-                    (Text("S\(parentIndex), E\(index): ")
-                        .font(.system(size: 28, weight: .semibold, design: .default))
-                        .foregroundColor(.white) +
-                    Text(summary)
+                    Text("S\(parentIndex), E\(index): \(summary)")
                         .font(.system(size: 28, weight: .regular, design: .default))
-                        .foregroundColor(.white.opacity(0.9)))
+                        .foregroundColor(.white.opacity(0.9))
                         .lineLimit(nil) // Allow unlimited wrapping
                         .frame(maxWidth: 1000, alignment: .leading)
                         .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 2)

@@ -61,8 +61,7 @@ class PlexAPIClient {
         configuration.timeoutIntervalForRequest = 15 // Reduced from 30
         configuration.timeoutIntervalForResource = 60 // Reduced from 120
 
-        // Enable HTTP pipelining and multiplexing for better performance
-        configuration.httpShouldUsePipelining = true
+        // Increase max connections per host for better performance (HTTP/2 and HTTP/3 handle multiplexing)
         configuration.httpMaximumConnectionsPerHost = 6 // Allow more concurrent connections
 
         // Configure aggressive caching
@@ -75,9 +74,6 @@ class PlexAPIClient {
         )
         configuration.urlCache = cache
         configuration.requestCachePolicy = .returnCacheDataElseLoad
-
-        // Enable connection pooling
-        configuration.shouldUseExtendedBackgroundIdleMode = true
 
         self.session = URLSession(configuration: configuration)
     }
@@ -287,7 +283,8 @@ class PlexAPIClient {
         // Debug: Check which items have clearLogos in the initial response
         for item in container.items {
             let hasLogo = item.clearLogo != nil
-            print("📚 [API] Item '\(item.title)' (type: \(item.type ?? "unknown")) - has clearLogo: \(hasLogo)")
+            let itemType = item.type ?? "unknown"
+            print("📚 [API] Item '\(item.title)' (type: \(itemType)) - has clearLogo: \(hasLogo)")
         }
 
         // Enrich episodes with show logos
@@ -385,7 +382,8 @@ class PlexAPIClient {
 
         print("📚 [API] Hubs response - size: \(container.size), hubs: \(hubs.count)")
         for hub in hubs {
-            print("📚 [API]   Hub: \(hub.title) - metadata count: \(hub.metadata?.count ?? 0)")
+            let metadataCount = hub.metadata?.count ?? 0
+            print("📚 [API]   Hub: \(hub.title) - metadata count: \(metadataCount)")
         }
 
         return hubs

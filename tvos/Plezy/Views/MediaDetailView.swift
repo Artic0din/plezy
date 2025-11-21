@@ -307,7 +307,7 @@ struct MediaDetailView: View {
                         }
                     }
                 }
-                .onChange(of: episodes) { newEpisodes in
+                .onChange(of: episodes) { _, newEpisodes in
                     // Scroll to first unwatched episode when episodes change (season change)
                     if let firstUnwatched = newEpisodes.first(where: { !$0.isWatched }) {
                         withAnimation {
@@ -737,7 +737,7 @@ struct EpisodeCard: View {
         .scaleEffect(isFocused ? 1.05 : 1.0)
         .shadow(color: isFocused ? Color.beaconPurple.opacity(0.5) : .clear, radius: isFocused ? 20 : 0, x: 0, y: isFocused ? 10 : 0)
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)
-        .onChange(of: isFocused) { focused in
+        .onChange(of: isFocused) { _, focused in
             onFocusChange(focused)
         }
     }
