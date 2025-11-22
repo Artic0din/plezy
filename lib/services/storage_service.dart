@@ -19,6 +19,9 @@ class StorageService {
   static const String _keyHomeUsersCache = 'home_users_cache';
   static const String _keyHomeUsersCacheExpiry = 'home_users_cache_expiry';
   static const String _keyHiddenLibraries = 'hidden_libraries';
+  static const String _keyServersList = 'servers_list';
+  static const String _keyEnabledServers = 'enabled_servers';
+  static const String _keyServerOrder = 'server_order';
 
   static StorageService? _instance;
   late SharedPreferences _prefs;
@@ -49,6 +52,20 @@ class StorageService {
 
   String? getServerUrl() {
     return _prefs.getString(_keyServerUrl);
+  }
+
+  // Per-Server Endpoint URL (for multi-server connection caching)
+  Future<void> saveServerEndpoint(String serverId, String url) async {
+    await _prefs.setString('server_endpoint_$serverId', url);
+    LogRedactionManager.registerServerUrl(url);
+  }
+
+  String? getServerEndpoint(String serverId) {
+    return _prefs.getString('server_endpoint_$serverId');
+  }
+
+  Future<void> clearServerEndpoint(String serverId) async {
+    await _prefs.remove('server_endpoint_$serverId');
   }
 
   // Server Access Token
@@ -87,14 +104,7 @@ class StorageService {
   }
 
   Map<String, dynamic>? getServerData() {
-    final jsonString = _prefs.getString(_keyServerData);
-    if (jsonString == null) return null;
-
-    try {
-      return json.decode(jsonString) as Map<String, dynamic>;
-    } catch (e) {
-      return null;
-    }
+    return _readJsonMap(_keyServerData);
   }
 
   // Client Identifier
@@ -136,6 +146,7 @@ class StorageService {
       _prefs.remove(_keyCurrentUserUUID),
       _prefs.remove(_keyHomeUsersCache),
       _prefs.remove(_keyHomeUsersCacheExpiry),
+      clearMultiServerData(),
     ]);
     LogRedactionManager.clearTrackedValues();
   }
@@ -191,12 +202,8 @@ class StorageService {
         _prefs.getString(_keyLibraryFilters);
     if (jsonString == null) return {};
 
-    try {
-      final decoded = json.decode(jsonString) as Map<String, dynamic>;
-      return decoded.map((key, value) => MapEntry(key, value.toString()));
-    } catch (e) {
-      return {};
-    }
+    final decoded = _decodeJsonStringToMap(jsonString);
+    return decoded.map((key, value) => MapEntry(key, value.toString()));
   }
 
   // Library Sort (per-library, stored individually with descending flag)
@@ -210,15 +217,7 @@ class StorageService {
   }
 
   Map<String, dynamic>? getLibrarySort(String sectionId) {
-    final jsonString = _prefs.getString('library_sort_$sectionId');
-    if (jsonString == null) return null;
-
-    try {
-      return json.decode(jsonString) as Map<String, dynamic>;
-    } catch (e) {
-      // Legacy support: if it's just a string, return it as the key
-      return {'key': jsonString, 'descending': false};
-    }
+    return _readJsonMap('library_sort_$sectionId', legacyStringOk: true);
   }
 
   // Library Grouping (per-library, e.g., 'movies', 'shows', 'seasons', 'episodes')
@@ -298,14 +297,7 @@ class StorageService {
   }
 
   Map<String, dynamic>? getUserProfile() {
-    final jsonString = _prefs.getString(_keyUserProfile);
-    if (jsonString == null) return null;
-
-    try {
-      return json.decode(jsonString) as Map<String, dynamic>;
-    } catch (e) {
-      return null;
-    }
+    return _readJsonMap(_keyUserProfile);
   }
 
   // Current User UUID
@@ -337,14 +329,7 @@ class StorageService {
       return null;
     }
 
-    final jsonString = _prefs.getString(_keyHomeUsersCache);
-    if (jsonString == null) return null;
-
-    try {
-      return json.decode(jsonString) as Map<String, dynamic>;
-    } catch (e) {
-      return null;
-    }
+    return _readJsonMap(_keyHomeUsersCache);
   }
 
   Future<void> clearHomeUsersCache() async {
@@ -370,5 +355,113 @@ class StorageService {
       saveCurrentUserUUID(userUUID),
       saveToken(authToken), // Update the main token
     ]);
+  }
+
+  // Multi-Server Support Methods
+
+  /// Get servers list as JSON string
+  String? getServersListJson() {
+    return _prefs.getString(_keyServersList);
+  }
+
+  /// Save servers list as JSON string
+  Future<void> saveServersListJson(String serversJson) async {
+    await _prefs.setString(_keyServersList, serversJson);
+  }
+
+  /// Get enabled servers as JSON string
+  String? getEnabledServersJson() {
+    return _prefs.getString(_keyEnabledServers);
+  }
+
+  /// Save enabled servers as JSON string
+  Future<void> saveEnabledServersJson(String enabledJson) async {
+    await _prefs.setString(_keyEnabledServers, enabledJson);
+  }
+
+  /// Clear servers list
+  Future<void> clearServersList() async {
+    await _prefs.remove(_keyServersList);
+  }
+
+  /// Clear enabled servers
+  Future<void> clearEnabledServers() async {
+    await _prefs.remove(_keyEnabledServers);
+  }
+
+  /// Clear all multi-server data
+  Future<void> clearMultiServerData() async {
+    // Clear all server endpoint caches
+    final keys = _prefs.getKeys();
+    final endpointKeys = keys.where(
+      (key) => key.startsWith('server_endpoint_'),
+    );
+
+    await Future.wait([
+      clearServersList(),
+      clearEnabledServers(),
+      clearServerOrder(),
+      ...endpointKeys.map((key) => _prefs.remove(key)),
+    ]);
+  }
+
+  /// Server Order (stored as JSON list of server IDs)
+  Future<void> saveServerOrder(List<String> serverIds) async {
+    final jsonString = json.encode(serverIds);
+    await _prefs.setString(_keyServerOrder, jsonString);
+  }
+
+  List<String>? getServerOrder() {
+    final jsonString = _prefs.getString(_keyServerOrder);
+    if (jsonString == null) return null;
+
+    try {
+      final decoded = json.decode(jsonString) as List<dynamic>;
+      return decoded.map((e) => e.toString()).toList();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Clear server order
+  Future<void> clearServerOrder() async {
+    await _prefs.remove(_keyServerOrder);
+  }
+
+  // Private helper methods
+
+  /// Helper to read and decode JSON Map from preferences
+  ///
+  /// [key] - The preference key to read
+  /// [legacyStringOk] - If true, returns {'key': value, 'descending': false}
+  ///                    when value is a plain string (for legacy library sort)
+  Map<String, dynamic>? _readJsonMap(
+    String key, {
+    bool legacyStringOk = false,
+  }) {
+    final jsonString = _prefs.getString(key);
+    if (jsonString == null) return null;
+
+    return _decodeJsonStringToMap(jsonString, legacyStringOk: legacyStringOk);
+  }
+
+  /// Helper to decode JSON string to Map with error handling
+  ///
+  /// [jsonString] - The JSON string to decode
+  /// [legacyStringOk] - If true, returns {'key': value, 'descending': false}
+  ///                    when value is a plain string (for legacy library sort)
+  Map<String, dynamic> _decodeJsonStringToMap(
+    String jsonString, {
+    bool legacyStringOk = false,
+  }) {
+    try {
+      return json.decode(jsonString) as Map<String, dynamic>;
+    } catch (e) {
+      if (legacyStringOk) {
+        // Legacy support: if it's just a string, return it as the key
+        return {'key': jsonString, 'descending': false};
+      }
+      return {};
+    }
   }
 }

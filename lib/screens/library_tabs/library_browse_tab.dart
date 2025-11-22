@@ -6,18 +6,20 @@ import '../../models/plex_library.dart';
 import '../../models/plex_metadata.dart';
 import '../../models/plex_filter.dart';
 import '../../models/plex_sort.dart';
-import '../../providers/plex_client_provider.dart';
 import '../../providers/settings_provider.dart';
-import '../../utils/provider_extensions.dart';
 import '../../utils/error_message_utils.dart';
 import '../../utils/grid_size_calculator.dart';
+import '../../utils/server_tagging_extensions.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/folder_tree_view.dart';
 import '../../widgets/filters_bottom_sheet.dart';
 import '../../widgets/sort_bottom_sheet.dart';
+import '../../widgets/empty_state_widget.dart';
+import '../../widgets/error_state_widget.dart';
 import '../../services/storage_service.dart';
 import '../../services/settings_service.dart' show ViewMode;
 import '../../mixins/item_updatable.dart';
+import '../../mixins/library_tab_state.dart';
 import '../../mixins/refreshable.dart';
 import '../../i18n/strings.g.dart';
 
@@ -40,12 +42,19 @@ class LibraryBrowseTab extends StatefulWidget {
 }
 
 class _LibraryBrowseTabState extends State<LibraryBrowseTab>
-    with AutomaticKeepAliveClientMixin, ItemUpdatable, Refreshable {
+    with
+        AutomaticKeepAliveClientMixin,
+        ItemUpdatable,
+        Refreshable,
+        LibraryTabStateMixin {
   @override
   bool get wantKeepAlive => true;
 
   @override
-  PlexClient get client => context.clientSafe;
+  PlexLibrary get library => widget.library;
+
+  @override
+  PlexClient get client => getClientForLibrary();
 
   @override
   void refresh() {
@@ -89,7 +98,7 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
   void didUpdateWidget(LibraryBrowseTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Reload if library changed
-    if (oldWidget.library.key != widget.library.key) {
+    if (oldWidget.library.globalKey != widget.library.globalKey) {
       _loadContent();
     }
   }
@@ -106,8 +115,8 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
     _cancelToken = CancelToken();
     final currentRequestId = ++_requestId;
 
-    // Extract context dependencies before async gap
-    final clientProvider = context.plexClient;
+    // Extract context dependencies before async gap - use server-specific client
+    final client = getClientForLibrary();
 
     setState(() {
       _isLoading = true;
@@ -118,11 +127,6 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
     });
 
     try {
-      final client = clientProvider.client;
-      if (client == null) {
-        throw Exception(t.errors.noClientAvailable);
-      }
-
       final storage = await StorageService.getInstance();
 
       // Load filters and sorts for this library
@@ -131,10 +135,12 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
 
       // Load saved preferences
       final savedFilters = storage.getLibraryFilters(
-        sectionId: widget.library.key,
+        sectionId: widget.library.globalKey,
       );
-      final savedSort = storage.getLibrarySort(widget.library.key);
-      final savedGrouping = storage.getLibraryGrouping(widget.library.key);
+      final savedSort = storage.getLibrarySort(widget.library.globalKey);
+      final savedGrouping = storage.getLibraryGrouping(
+        widget.library.globalKey,
+      );
 
       // Check if request was cancelled
       if (currentRequestId != _requestId) return;
@@ -192,10 +198,8 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
     });
 
     try {
-      final client = context.read<PlexClientProvider>().client;
-      if (client == null) {
-        throw Exception(t.errors.noClientAvailable);
-      }
+      // Use server-specific client for this library
+      final client = getClientForLibrary();
 
       // Build filter params
       final filterParams = Map<String, String>.from(_selectedFilters);
@@ -223,15 +227,18 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
         cancelToken: _cancelToken,
       );
 
+      // Tag items with server info for multi-server support
+      final taggedItems = items.tagWithLibrary(widget.library);
+
       if (currentRequestId != _requestId) return;
 
       setState(() {
         if (loadMore) {
-          _items.addAll(items);
+          _items.addAll(taggedItems);
         } else {
-          _items = items;
+          _items = taggedItems;
         }
-        _hasMoreItems = items.length >= _pageSize;
+        _hasMoreItems = taggedItems.length >= _pageSize;
         _currentPage++;
         _isLoading = false;
       });
@@ -325,9 +332,12 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
                   });
 
                   final storage = await StorageService.getInstance();
-                  await storage.saveLibraryGrouping(widget.library.key, value);
+                  await storage.saveLibraryGrouping(
+                    widget.library.globalKey,
+                    value,
+                  );
 
-                  if (!mounted) return;
+                  if (!context.mounted) return;
 
                   Navigator.pop(context);
                   _loadItems();
@@ -357,7 +367,7 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
           final storage = await StorageService.getInstance();
           await storage.saveLibraryFilters(
             filters,
-            sectionId: widget.library.key,
+            sectionId: widget.library.globalKey,
           );
 
           _loadItems();
@@ -382,7 +392,7 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
 
           StorageService.getInstance().then((storage) {
             storage.saveLibrarySort(
-              widget.library.key,
+              widget.library.globalKey,
               sort.key,
               descending: descending,
             );
@@ -487,6 +497,7 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
     if (_selectedGrouping == 'folders') {
       return FolderTreeView(
         libraryKey: widget.library.key,
+        serverId: widget.library.serverId,
         onRefresh: updateItem,
       );
     }
@@ -496,33 +507,18 @@ class _LibraryBrowseTabState extends State<LibraryBrowseTab>
     }
 
     if (_errorMessage != null && _items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(_errorMessage!),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadContent,
-              child: Text(t.common.retry),
-            ),
-          ],
-        ),
+      return ErrorStateWidget(
+        message: _errorMessage!,
+        icon: Icons.error_outline,
+        onRetry: _loadContent,
+        retryLabel: t.common.retry,
       );
     }
 
     if (_items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.folder_open, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(t.libraries.thisLibraryIsEmpty),
-          ],
-        ),
+      return EmptyStateWidget(
+        message: t.libraries.thisLibraryIsEmpty,
+        icon: Icons.folder_open,
       );
     }
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../client/plex_client.dart';
 import '../models/plex_metadata.dart';
-import '../providers/plex_client_provider.dart';
 import '../utils/duration_formatter.dart';
+import '../utils/provider_extensions.dart';
 import '../i18n/strings.g.dart';
 
 /// Custom list item widget for playlist items
@@ -118,15 +118,17 @@ class PlaylistItemCard extends StatelessWidget {
     );
   }
 
+  /// Get the correct PlexClient for this item's server
+  PlexClient _getClientForItem(BuildContext context) {
+    return context.getClientForServer(item.serverId);
+  }
+
   Widget _buildPosterImage(BuildContext context) {
     final posterUrl = item.posterThumb();
     if (posterUrl != null) {
-      return Consumer<PlexClientProvider>(
-        builder: (context, clientProvider, child) {
-          final client = clientProvider.client;
-          if (client == null) {
-            return _buildPlaceholder();
-          }
+      return Builder(
+        builder: (context) {
+          final client = _getClientForItem(context);
 
           return ClipRRect(
             borderRadius: BorderRadius.circular(6),

@@ -1,11 +1,12 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'mixins/multi_server_fields.dart';
 import 'plex_role.dart';
 
 part 'plex_metadata.g.dart';
 
 @JsonSerializable()
-class PlexMetadata {
+class PlexMetadata with MultiServerFields {
   final String ratingKey;
   final String key;
   final String? guid;
@@ -22,6 +23,7 @@ class PlexMetadata {
   final int? duration;
   final int? addedAt;
   final int? updatedAt;
+  final int? lastViewedAt; // Timestamp when item was last viewed
   final String? grandparentTitle; // Show title for episodes
   final String? grandparentThumb; // Show poster for episodes
   final String? grandparentArt; // Show art for episodes
@@ -45,9 +47,20 @@ class PlexMetadata {
   final int? playQueueItemID; // Play queue item ID (unique even for duplicates)
   final int? librarySectionID; // Library section ID this item belongs to
 
+  // Multi-server support fields (from MultiServerFields mixin)
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? serverId;
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? serverName;
+
   // Transient field for clear logo (extracted from Image array)
   String? _clearLogo;
   String? get clearLogo => _clearLogo;
+
+  /// Global unique identifier across all servers (serverId:ratingKey)
+  String get globalKey => serverId != null ? '$serverId:$ratingKey' : ratingKey;
 
   PlexMetadata({
     required this.ratingKey,
@@ -66,6 +79,7 @@ class PlexMetadata {
     this.duration,
     this.addedAt,
     this.updatedAt,
+    this.lastViewedAt,
     this.grandparentTitle,
     this.grandparentThumb,
     this.grandparentArt,
@@ -87,6 +101,8 @@ class PlexMetadata {
     this.playlistItemID,
     this.playQueueItemID,
     this.librarySectionID,
+    this.serverId,
+    this.serverName,
   });
 
   /// Create a copy of this metadata with optional field overrides
@@ -107,6 +123,7 @@ class PlexMetadata {
     int? duration,
     int? addedAt,
     int? updatedAt,
+    int? lastViewedAt,
     String? grandparentTitle,
     String? grandparentThumb,
     String? grandparentArt,
@@ -128,6 +145,8 @@ class PlexMetadata {
     int? playlistItemID,
     int? playQueueItemID,
     int? librarySectionID,
+    String? serverId,
+    String? serverName,
   }) {
     final copy = PlexMetadata(
       ratingKey: ratingKey ?? this.ratingKey,
@@ -146,6 +165,7 @@ class PlexMetadata {
       duration: duration ?? this.duration,
       addedAt: addedAt ?? this.addedAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      lastViewedAt: lastViewedAt ?? this.lastViewedAt,
       grandparentTitle: grandparentTitle ?? this.grandparentTitle,
       grandparentThumb: grandparentThumb ?? this.grandparentThumb,
       grandparentArt: grandparentArt ?? this.grandparentArt,
@@ -167,6 +187,8 @@ class PlexMetadata {
       playlistItemID: playlistItemID ?? this.playlistItemID,
       playQueueItemID: playQueueItemID ?? this.playQueueItemID,
       librarySectionID: librarySectionID ?? this.librarySectionID,
+      serverId: serverId ?? this.serverId,
+      serverName: serverName ?? this.serverName,
     );
     // Preserve clearLogo
     copy._clearLogo = _clearLogo;

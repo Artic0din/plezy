@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/plex_metadata.dart';
 import '../providers/settings_provider.dart';
-import '../utils/app_logger.dart';
 import '../widgets/media_card.dart';
 import '../widgets/desktop_app_bar.dart';
 import '../i18n/strings.g.dart';
 import '../utils/grid_size_calculator.dart';
 import '../utils/dialogs.dart';
-import '../utils/provider_extensions.dart';
+import '../utils/app_logger.dart';
 import 'base_media_list_detail_screen.dart';
 
 /// Screen to display the contents of a collection
@@ -22,7 +21,8 @@ class CollectionDetailScreen extends StatefulWidget {
 }
 
 class _CollectionDetailScreenState
-    extends BaseMediaListDetailScreen<CollectionDetailScreen> {
+    extends BaseMediaListDetailScreen<CollectionDetailScreen>
+    with StandardItemLoader<CollectionDetailScreen> {
   @override
   PlexMetadata get mediaItem => widget.collection;
 
@@ -33,39 +33,18 @@ class _CollectionDetailScreenState
   String get emptyMessage => t.collections.empty;
 
   @override
-  Future<void> loadItems() async {
-    if (mounted) {
-      setState(() {
-        isLoading = true;
-        errorMessage = null;
-      });
-    }
+  Future<List<PlexMetadata>> fetchItems() async {
+    return await client.getCollectionItems(widget.collection.ratingKey);
+  }
 
-    try {
-      final client = this.client;
-      final newItems = await client.getCollectionItems(
-        widget.collection.ratingKey,
-      );
+  @override
+  String getLoadErrorMessage(Object error) {
+    return t.collections.failedToLoadItems(error: error.toString());
+  }
 
-      if (mounted) {
-        setState(() {
-          items = newItems;
-          isLoading = false;
-        });
-      }
-
-      appLogger.d(
-        'Loaded ${newItems.length} items for collection: ${widget.collection.title}',
-      );
-    } catch (e) {
-      appLogger.e('Failed to load collection items', error: e);
-      if (mounted) {
-        setState(() {
-          errorMessage = t.collections.failedToLoadItems(error: e.toString());
-          isLoading = false;
-        });
-      }
-    }
+  @override
+  String getLoadSuccessMessage(int itemCount) {
+    return 'Loaded $itemCount items for collection: ${widget.collection.title}';
   }
 
   Future<void> _deleteCollection() async {
@@ -97,10 +76,6 @@ class _CollectionDetailScreenState
     if (!mounted) return;
 
     try {
-      final clientProvider = context.plexClient;
-      final client = clientProvider.client;
-      if (client == null) return;
-
       final success = await client.deleteCollection(
         sectionId.toString(),
         widget.collection.ratingKey,
@@ -145,61 +120,10 @@ class _CollectionDetailScreenState
           CustomAppBar(
             title: Text(widget.collection.title),
             pinned: true,
-            actions: [
-              // Play button
-              if (items.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.play_arrow),
-                  tooltip: t.discover.play,
-                  onPressed: playItems,
-                ),
-              // Shuffle button
-              if (items.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.shuffle),
-                  tooltip: t.common.shuffle,
-                  onPressed: shufflePlayItems,
-                ),
-              // Delete button
-              IconButton(
-                icon: const Icon(Icons.delete),
-                tooltip: t.common.delete,
-                onPressed: _deleteCollection,
-                color: Colors.red,
-              ),
-            ],
+            actions: buildAppBarActions(onDelete: _deleteCollection),
           ),
-          if (errorMessage != null)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 48,
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(errorMessage!),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: loadItems,
-                      child: Text(t.common.retry),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else if (items.isEmpty && isLoading)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (items.isEmpty)
-            SliverFillRemaining(
-              child: Center(child: Text(t.collections.noItems)),
-            )
-          else
+          ...buildStateSlivers(),
+          if (items.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
               sliver: Consumer<SettingsProvider>(

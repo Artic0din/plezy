@@ -1,9 +1,11 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'mixins/multi_server_fields.dart';
+
 part 'plex_playlist.g.dart';
 
 @JsonSerializable()
-class PlexPlaylist {
+class PlexPlaylist with MultiServerFields {
   final String ratingKey;
   final String key;
   final String type; // "playlist"
@@ -21,6 +23,14 @@ class PlexPlaylist {
   final String? content; // For smart playlists - generator URI
   final String? guid;
   final String? thumb;
+
+  // Multi-server support fields (from MultiServerFields mixin)
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? serverId;
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final String? serverName;
 
   PlexPlaylist({
     required this.ratingKey,
@@ -40,6 +50,8 @@ class PlexPlaylist {
     this.content,
     this.guid,
     this.thumb,
+    this.serverId,
+    this.serverName,
   });
 
   /// Helper to get display image (composite or thumb)
@@ -50,6 +62,9 @@ class PlexPlaylist {
 
   /// Helper to determine if playlist is editable
   bool get isEditable => !smart;
+
+  /// Get globally unique key across all servers
+  String get globalKey => serverId != null ? '$serverId:$ratingKey' : ratingKey;
 
   // Properties for MediaCard compatibility with PlexMetadata interface
 
@@ -83,4 +98,49 @@ class PlexPlaylist {
       _$PlexPlaylistFromJson(json);
 
   Map<String, dynamic> toJson() => _$PlexPlaylistToJson(this);
+
+  /// Create a copy with optional field updates
+  PlexPlaylist copyWith({
+    String? ratingKey,
+    String? key,
+    String? type,
+    String? title,
+    String? summary,
+    bool? smart,
+    String? playlistType,
+    int? duration,
+    int? leafCount,
+    String? composite,
+    int? addedAt,
+    int? updatedAt,
+    int? lastViewedAt,
+    int? viewCount,
+    String? content,
+    String? guid,
+    String? thumb,
+    String? serverId,
+    String? serverName,
+  }) {
+    return PlexPlaylist(
+      ratingKey: ratingKey ?? this.ratingKey,
+      key: key ?? this.key,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      summary: summary ?? this.summary,
+      smart: smart ?? this.smart,
+      playlistType: playlistType ?? this.playlistType,
+      duration: duration ?? this.duration,
+      leafCount: leafCount ?? this.leafCount,
+      composite: composite ?? this.composite,
+      addedAt: addedAt ?? this.addedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastViewedAt: lastViewedAt ?? this.lastViewedAt,
+      viewCount: viewCount ?? this.viewCount,
+      content: content ?? this.content,
+      guid: guid ?? this.guid,
+      thumb: thumb ?? this.thumb,
+      serverId: serverId ?? this.serverId,
+      serverName: serverName ?? this.serverName,
+    );
+  }
 }

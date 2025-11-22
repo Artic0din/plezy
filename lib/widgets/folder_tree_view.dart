@@ -1,21 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../models/plex_metadata.dart';
-import '../providers/plex_client_provider.dart';
-import '../utils/app_logger.dart';
-import '../utils/video_player_navigation.dart';
 import '../screens/media_detail_screen.dart';
 import '../screens/season_detail_screen.dart';
-import 'folder_tree_item.dart';
+import '../utils/app_logger.dart';
+import '../utils/provider_extensions.dart';
+import '../utils/video_player_navigation.dart';
 import '../i18n/strings.g.dart';
+import 'folder_tree_item.dart';
+import 'empty_state_widget.dart';
+import 'error_state_widget.dart';
 
 /// Expandable tree view for browsing library folders
 /// Shows a hierarchical file/folder structure
 class FolderTreeView extends StatefulWidget {
   final String libraryKey;
+  final String? serverId; // Server this library belongs to
   final void Function(String)? onRefresh;
 
-  const FolderTreeView({super.key, required this.libraryKey, this.onRefresh});
+  const FolderTreeView({
+    super.key,
+    required this.libraryKey,
+    this.serverId,
+    this.onRefresh,
+  });
 
   @override
   State<FolderTreeView> createState() => _FolderTreeViewState();
@@ -42,18 +49,23 @@ class _FolderTreeViewState extends State<FolderTreeView> {
     });
 
     try {
-      final clientProvider = context.read<PlexClientProvider>();
-      final client = clientProvider.client;
-      if (client == null) {
-        throw Exception(t.errors.noClientAvailable);
-      }
+      final client = context.getClientForServer(widget.serverId);
 
       final folders = await client.getLibraryFolders(widget.libraryKey);
 
       if (!mounted) return;
 
+      final taggedFolders = folders
+          .map(
+            (folder) => folder.copyWith(
+              serverId: widget.serverId,
+              serverName: null, // server name not required for folders listing
+            ),
+          )
+          .toList();
+
       setState(() {
-        _rootFolders = folders;
+        _rootFolders = taggedFolders;
         _isLoadingRoot = false;
       });
 
@@ -89,18 +101,21 @@ class _FolderTreeViewState extends State<FolderTreeView> {
     });
 
     try {
-      final clientProvider = context.read<PlexClientProvider>();
-      final client = clientProvider.client;
-      if (client == null) {
-        throw Exception(t.errors.noClientAvailable);
-      }
+      final client = context.getClientForServer(widget.serverId);
 
       final children = await client.getFolderChildren(folder.key);
 
       if (!mounted) return;
 
+      final taggedChildren = children
+          .map(
+            (child) =>
+                child.copyWith(serverId: widget.serverId, serverName: null),
+          )
+          .toList();
+
       setState(() {
-        _childrenCache[folder.key] = children;
+        _childrenCache[folder.key] = taggedChildren;
         _expandedFolders.add(folder.key);
         _loadingFolders.remove(folder.key);
       });
@@ -227,33 +242,18 @@ class _FolderTreeViewState extends State<FolderTreeView> {
     }
 
     if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(_errorMessage!),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadRootFolders,
-              child: Text(t.common.retry),
-            ),
-          ],
-        ),
+      return ErrorStateWidget(
+        message: _errorMessage!,
+        icon: Icons.error_outline,
+        onRetry: _loadRootFolders,
+        retryLabel: t.common.retry,
       );
     }
 
     if (_rootFolders.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.folder_open, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(t.libraries.noFoldersFound),
-          ],
-        ),
+      return EmptyStateWidget(
+        message: t.libraries.noFoldersFound,
+        icon: Icons.folder_open,
       );
     }
 

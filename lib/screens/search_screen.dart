@@ -3,16 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../client/plex_client.dart';
 import '../i18n/strings.g.dart';
-import '../mixins/item_updatable.dart';
 import '../mixins/refreshable.dart';
 import '../models/plex_metadata.dart';
+import '../providers/multi_server_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/settings_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/grid_cross_axis_extent.dart';
-import '../utils/provider_extensions.dart';
 import '../widgets/desktop_app_bar.dart';
 import '../widgets/media_card.dart';
 
@@ -23,11 +21,7 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen>
-    with Refreshable, ItemUpdatable {
-  @override
-  PlexClient get client => context.clientSafe;
-
+class _SearchScreenState extends State<SearchScreen> with Refreshable {
   final _searchController = TextEditingController();
   List<PlexMetadata> _searchResults = [];
   bool _isSearching = false;
@@ -91,13 +85,18 @@ class _SearchScreenState extends State<SearchScreen>
     });
 
     try {
-      final clientProvider = context.plexClient;
-      final client = clientProvider.client;
-      if (client == null) {
-        throw Exception('No client available');
+      final multiServerProvider = Provider.of<MultiServerProvider>(
+        context,
+        listen: false,
+      );
+
+      if (!multiServerProvider.hasConnectedServers) {
+        throw Exception('No servers available');
       }
 
-      final results = await client.search(query);
+      // Search across all connected servers
+      final results = await multiServerProvider.aggregationService
+          .searchAcrossServers(query);
       if (mounted) {
         setState(() {
           _searchResults = results;
@@ -140,13 +139,10 @@ class _SearchScreenState extends State<SearchScreen>
     });
   }
 
-  @override
-  void updateItemInLists(String ratingKey, PlexMetadata updatedMetadata) {
-    final index = _searchResults.indexWhere(
-      (item) => item.ratingKey == ratingKey,
-    );
-    if (index != -1) {
-      _searchResults[index] = updatedMetadata;
+  void updateItem(String ratingKey) {
+    // Trigger a refresh of the search to get updated metadata
+    if (_searchController.text.isNotEmpty) {
+      _performSearch(_searchController.text);
     }
   }
 

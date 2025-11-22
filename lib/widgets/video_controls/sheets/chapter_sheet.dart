@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:provider/provider.dart';
+import '../../../client/plex_client.dart';
 import '../../../models/plex_media_info.dart';
-import '../../../providers/plex_client_provider.dart';
 import '../../../utils/duration_formatter.dart';
+import '../../../utils/provider_extensions.dart';
 import 'base_video_control_sheet.dart';
 
 /// Bottom sheet for selecting chapters
@@ -11,28 +11,37 @@ class ChapterSheet extends StatelessWidget {
   final Player player;
   final List<PlexChapter> chapters;
   final bool chaptersLoaded;
+  final String? serverId; // Server ID for the metadata these chapters belong to
 
   const ChapterSheet({
     super.key,
     required this.player,
     required this.chapters,
     required this.chaptersLoaded,
+    this.serverId,
   });
 
   static void show(
     BuildContext context,
     Player player,
     List<PlexChapter> chapters,
-    bool chaptersLoaded,
-  ) {
+    bool chaptersLoaded, {
+    String? serverId,
+  }) {
     BaseVideoControlSheet.showSheet(
       context: context,
       builder: (context) => ChapterSheet(
         player: player,
         chapters: chapters,
         chaptersLoaded: chaptersLoaded,
+        serverId: serverId,
       ),
     );
+  }
+
+  /// Get the correct PlexClient for the metadata's server
+  PlexClient _getClientForChapters(BuildContext context) {
+    return context.getClientForServer(serverId);
   }
 
   @override
@@ -84,16 +93,9 @@ class ChapterSheet extends StatelessWidget {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(4),
-                            child: Consumer<PlexClientProvider>(
-                              builder: (context, clientProvider, child) {
-                                final client = clientProvider.client;
-                                if (client == null) {
-                                  return const Icon(
-                                    Icons.image,
-                                    color: Colors.white54,
-                                    size: 34,
-                                  );
-                                }
+                            child: Builder(
+                              builder: (context) {
+                                final client = _getClientForChapters(context);
                                 return Image.network(
                                   client.getThumbnailUrl(chapter.thumb),
                                   width: 60,

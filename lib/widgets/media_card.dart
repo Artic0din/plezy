@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import '../client/plex_client.dart';
 import '../models/plex_metadata.dart';
 import '../models/plex_playlist.dart';
-import '../providers/plex_client_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/settings_service.dart';
 import '../utils/provider_extensions.dart';
@@ -94,9 +94,6 @@ class _MediaCardState extends State<MediaCard> {
   }
 
   void _handleTap(BuildContext context) async {
-    final client = context.client;
-    if (client == null) return;
-
     // Handle playlists
     if (widget.item is PlexPlaylist) {
       await Navigator.push(
@@ -652,6 +649,19 @@ class _MediaCardList extends StatelessWidget {
   }
 }
 
+/// Helper to get the correct PlexClient for an item's server
+PlexClient _getClientForItem(BuildContext context, dynamic item) {
+  String? serverId;
+
+  if (item is PlexMetadata) {
+    serverId = item.serverId;
+  } else if (item is PlexPlaylist) {
+    serverId = item.serverId;
+  }
+
+  return context.getClientForServer(serverId);
+}
+
 Widget _buildPosterImage(BuildContext context, dynamic item) {
   String? posterUrl;
   IconData fallbackIcon = Icons.movie;
@@ -665,16 +675,9 @@ Widget _buildPosterImage(BuildContext context, dynamic item) {
   }
 
   if (posterUrl != null) {
-    return Consumer<PlexClientProvider>(
-      builder: (context, clientProvider, child) {
-        final client = clientProvider.client;
-        if (client == null) {
-          return SkeletonLoader(
-            child: Center(
-              child: Icon(fallbackIcon, size: 40, color: Colors.white54),
-            ),
-          );
-        }
+    return Builder(
+      builder: (context) {
+        final client = _getClientForItem(context, item);
 
         return CachedNetworkImage(
           imageUrl: client.getThumbnailUrl(posterUrl!),
