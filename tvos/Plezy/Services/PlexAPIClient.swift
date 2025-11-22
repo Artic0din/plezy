@@ -508,22 +508,19 @@ extension PlexAPIClient {
     // MARK: - PIN Authentication
 
     func createPin() async throws -> PlexPin {
-        struct PinRequest: Encodable {
-            let strong: Bool = false
-        }
-
         struct PinResponse: Decodable {
             let id: Int
             let code: String
         }
 
-        let body = try JSONEncoder().encode(PinRequest())
+        // Use strong=true to match Flutter implementation and ensure proper token generation
         let response: PinResponse = try await request(
-            path: "/api/v2/pins",
+            path: "/api/v2/pins?strong=true",
             method: "POST",
-            body: body
+            body: nil
         )
 
+        print("🔑 [PIN] Created PIN: \(response.code) (ID: \(response.id))")
         return PlexPin(id: response.id, code: response.code, authToken: nil)
     }
 
