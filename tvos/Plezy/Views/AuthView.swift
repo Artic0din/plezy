@@ -80,7 +80,7 @@ struct AuthView: View {
                         }
                         .font(.title2)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ClearGlassButtonStyle())
                 }
 
                 if let error = authService.error {

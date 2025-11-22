@@ -93,12 +93,12 @@ struct VideoPlayerView: View {
                             }
                             .font(.title3)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ClearGlassButtonStyle())
 
                         Button("Close") {
                             dismiss()
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ClearGlassButtonStyle())
                     }
                 }
             }

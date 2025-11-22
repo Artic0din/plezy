@@ -45,7 +45,7 @@ struct ServerSelectionView: View {
                                 await authService.loadServers()
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(ClearGlassButtonStyle())
                     }
                 } else {
                     ScrollView {
@@ -201,7 +201,7 @@ struct ServerCard: View {
                 }
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .disabled(isConnecting)
     }

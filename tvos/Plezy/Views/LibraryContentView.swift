@@ -337,21 +337,31 @@ struct FilterButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    @FocusState private var isFocused: Bool
 
     var body: some View {
-        if isSelected {
-            Button(action: action) {
-                Text(title)
-                    .font(.system(size: 20, weight: .semibold, design: .default))
-            }
-            .buttonStyle(.borderedProminent)
-        } else {
-            Button(action: action) {
-                Text(title)
-                    .font(.system(size: 20, weight: .semibold, design: .default))
-            }
-            .buttonStyle(.bordered)
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 20, weight: .semibold, design: .default))
+                .foregroundColor(isSelected ? .white : .white.opacity(0.7))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(isFocused ? 0.2 : 0.1))
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            isFocused ? Color.white.opacity(0.5) : Color.clear,
+                            lineWidth: 2
+                        )
+                )
         }
+        .buttonStyle(MediaCardButtonStyle())
+        .focused($isFocused)
+        .scaleEffect(isFocused ? 1.05 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
     }
 }
 

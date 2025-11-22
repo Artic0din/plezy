@@ -249,7 +249,7 @@ struct HomeView: View {
                 }
                 .font(.title2)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(ClearGlassButtonStyle())
         }
     }
 
@@ -623,8 +623,7 @@ struct TopMenuItem: View {
                 }
             }
         }
-        .buttonStyle(PlainButtonStyle())
-        .focusable()
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .scaleEffect(isFocused ? 1.1 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)

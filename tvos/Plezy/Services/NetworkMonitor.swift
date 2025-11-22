@@ -110,7 +110,7 @@ struct OfflineBanner: View {
                         Image(systemName: "xmark")
                             .font(.title3)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(MediaCardButtonStyle())
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 80)

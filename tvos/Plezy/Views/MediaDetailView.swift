@@ -487,14 +487,14 @@ struct MediaDetailContent: View {
                 }
                 .foregroundColor(.white)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(ClearGlassButtonStyle())
 
             if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
                     Image(systemName: "shuffle.circle.fill")
                         .font(.system(size: 24))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(ClearGlassButtonStyle())
             }
 
             if media.type == "movie" && !trailers.isEmpty {
@@ -505,7 +505,7 @@ struct MediaDetailContent: View {
                     }
                     .font(.system(size: 16, weight: .medium))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(ClearGlassButtonStyle())
             }
 
             // Watch/Unwatch button for movies
@@ -600,7 +600,7 @@ struct SeasonChip: View {
                         .strokeBorder(Color.white.opacity(isFocused ? 0.6 : 0.15), lineWidth: 1)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .scaleEffect(isFocused ? 1.08 : 1.0)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
@@ -739,7 +739,7 @@ struct EpisodeThumbnail: View {
             y: isFocused ? 10 : 4
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
-        .buttonStyle(.plain)
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .onChange(of: isFocused) { _, focused in
             onFocusChange(focused)
@@ -805,7 +805,7 @@ struct WatchStatusButton: View {
             }
             .font(.system(size: 16, weight: .medium))
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(ClearGlassButtonStyle())
         .disabled(isUpdating)
     }
 
