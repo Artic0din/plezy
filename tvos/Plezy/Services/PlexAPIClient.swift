@@ -56,8 +56,25 @@ class PlexAPIClient {
         self.accessToken = accessToken
 
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 120
+
+        // Optimize timeouts for faster response
+        configuration.timeoutIntervalForRequest = 15 // Reduced from 30
+        configuration.timeoutIntervalForResource = 60 // Reduced from 120
+
+        // Increase max connections per host for better performance (HTTP/2 and HTTP/3 handle multiplexing)
+        configuration.httpMaximumConnectionsPerHost = 6 // Allow more concurrent connections
+
+        // Configure aggressive caching
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cacheURL = cachesDirectory.appendingPathComponent("PlexAPICache")
+        let cache = URLCache(
+            memoryCapacity: 50 * 1024 * 1024, // 50 MB memory cache
+            diskCapacity: 200 * 1024 * 1024,  // 200 MB disk cache
+            directory: cacheURL
+        )
+        configuration.urlCache = cache
+        configuration.requestCachePolicy = .returnCacheDataElseLoad
+
         self.session = URLSession(configuration: configuration)
     }
 
@@ -266,7 +283,8 @@ class PlexAPIClient {
         // Debug: Check which items have clearLogos in the initial response
         for item in container.items {
             let hasLogo = item.clearLogo != nil
-            print("📚 [API] Item '\(item.title)' (type: \(item.type ?? "unknown")) - has clearLogo: \(hasLogo)")
+            let itemType = item.type ?? "unknown"
+            print("📚 [API] Item '\(item.title)' (type: \(itemType)) - has clearLogo: \(hasLogo)")
         }
 
         // Enrich episodes with show logos
@@ -364,7 +382,8 @@ class PlexAPIClient {
 
         print("📚 [API] Hubs response - size: \(container.size), hubs: \(hubs.count)")
         for hub in hubs {
-            print("📚 [API]   Hub: \(hub.title) - metadata count: \(hub.metadata?.count ?? 0)")
+            let metadataCount = hub.metadata?.count ?? 0
+            print("📚 [API]   Hub: \(hub.title) - metadata count: \(metadataCount)")
         }
 
         return hubs
@@ -440,6 +459,21 @@ class PlexAPIClient {
         }
         let container: ChapterContainer = try await request(path: "/library/metadata/\(ratingKey)/chapters")
         return container.chapters ?? []
+    }
+
+    // MARK: - Media Markers (Skip Intro, Credits, etc.)
+
+    func getMediaMarkers(ratingKey: String) async throws -> [PlexMediaMarker] {
+        struct MarkerResponse: Codable {
+            let MediaContainer: MarkerContainer
+
+            struct MarkerContainer: Codable {
+                let Marker: [PlexMediaMarker]?
+            }
+        }
+
+        let response: MarkerResponse = try await request(path: "/library/metadata/\(ratingKey)")
+        return response.MediaContainer.Marker ?? []
     }
 
     enum PlaybackState: String {

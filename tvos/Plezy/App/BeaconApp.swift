@@ -37,7 +37,7 @@ struct BeaconApp: App {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [
-                .allowBluetooth,
+                .allowBluetoothHFP,
                 .allowBluetoothA2DP,
                 .allowAirPlay
             ])

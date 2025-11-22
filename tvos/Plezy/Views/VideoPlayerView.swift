@@ -12,6 +12,7 @@ import Combine
 import MediaPlayer
 import AVFAudio
 
+@available(tvOS 16.0, *)
 struct VideoPlayerView: View {
     let media: PlexMetadata
     @EnvironmentObject var authService: PlexAuthService
@@ -139,6 +140,7 @@ struct VideoPlayerView: View {
 
 // MARK: - AVPlayerViewController Wrapper
 
+@available(tvOS 16.0, *)
 struct TVPlayerViewController: UIViewControllerRepresentable {
     @ObservedObject var playerManager: VideoPlayerManager
 
@@ -146,8 +148,15 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         let controller = AVPlayerViewController()
 
         #if os(tvOS)
-        // tvOS-specific configuration
-        // Note: PiP settings not available on tvOS
+        // tvOS-specific configuration for enhanced playback experience
+
+        // Configure transport bar customization (tvOS 16.0+)
+        controller.transportBarIncludesTitleView = true
+
+        // Set the coordinator as delegate
+        controller.delegate = context.coordinator
+
+        print("🎬 [Player] Configured AVPlayerViewController for tvOS")
         #else
         // iOS-specific configuration
         controller.allowsPictureInPicturePlayback = true
@@ -165,11 +174,46 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(playerManager: playerManager)
     }
 
-    class Coordinator: NSObject {
-        // Coordinator for future use if needed
+    @available(tvOS 16.0, *)
+    class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+        let playerManager: VideoPlayerManager
+
+        init(playerManager: VideoPlayerManager) {
+            self.playerManager = playerManager
+            super.init()
+        }
+
+        // MARK: - Skip to Next/Previous Episode
+
+        #if os(tvOS)
+        @available(tvOS 16.0, *)
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            skipToNextItemWithCompletion completion: @escaping (Bool) -> Void
+        ) {
+            // Handle skip to next episode
+            if let nextEpisode = playerManager.nextEpisode {
+                Task { @MainActor in
+                    await playerManager.playNextEpisode(nextEpisode)
+                    completion(true)
+                }
+            } else {
+                completion(false)
+            }
+        }
+
+        @available(tvOS 16.0, *)
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            skipToPreviousItemWithCompletion completion: @escaping (Bool) -> Void
+        ) {
+            // No previous item support
+            completion(false)
+        }
+        #endif
     }
 }
 
@@ -324,6 +368,13 @@ class VideoPlayerManager: ObservableObject {
                 await fetchNextEpisode(client: client)
             }
 
+            // Configure skip intro if available (tvOS 16.0+)
+            #if os(tvOS)
+            if #available(tvOS 16.0, *) {
+                await configureSkipIntro(for: ratingKey, client: client)
+            }
+            #endif
+
             isLoading = false
 
         } catch {
@@ -349,17 +400,17 @@ class VideoPlayerManager: ObservableObject {
     private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
         var nowPlayingInfo: [String: Any] = [:]
 
-        // Title
+        // Title and subtitle for tvOS display
         if media.type == "episode" {
-            // For TV shows: "Show Name - S1E1 - Episode Title"
+            // For TV shows:
+            // Title: Show Name
+            // Subtitle: Sx, Ex - Episode Name
             if let showTitle = media.grandparentTitle {
+                nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
                 nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
-                nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
-                let seasonEpisode = media.formatSeasonEpisode()
-                nowPlayingInfo[MPNowPlayingInfoPropertyChapterNumber] = seasonEpisode as Any
             }
         } else {
-            // For movies
+            // For movies: Title is the movie title
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
         }
 
@@ -368,6 +419,52 @@ class VideoPlayerManager: ObservableObject {
             let seconds = Double(duration) / 1000.0
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
         }
+
+        // External content identifiers for tvOS integration
+        #if os(tvOS)
+        if #available(tvOS 16.0, *) {
+            var externalMetadata: [AVMetadataItem] = []
+
+            // Set title
+            let titleItem = AVMutableMetadataItem()
+            titleItem.identifier = .commonIdentifierTitle
+            if media.type == "episode", let showTitle = media.grandparentTitle {
+                titleItem.value = showTitle as NSString
+            } else {
+                titleItem.value = media.title as NSString
+            }
+            titleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+            externalMetadata.append(titleItem)
+
+            // Set subtitle for TV episodes: "Sx, Ex - Episode Name"
+            if media.type == "episode" {
+                let subtitleItem = AVMutableMetadataItem()
+                subtitleItem.identifier = .iTunesMetadataTrackSubTitle
+                if let season = media.parentIndex, let episode = media.index {
+                    subtitleItem.value = "S\(season), E\(episode) - \(media.title)" as NSString
+                } else {
+                    subtitleItem.value = media.title as NSString
+                }
+                subtitleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+                externalMetadata.append(subtitleItem)
+            }
+
+            // Add description
+            if let summary = media.summary {
+                let descItem = AVMutableMetadataItem()
+                descItem.identifier = .commonIdentifierDescription
+                descItem.value = summary as NSString
+                descItem.dataType = kCMMetadataBaseDataType_UTF8 as String
+                externalMetadata.append(descItem)
+            }
+
+            // Set external metadata on player item
+            if let playerItem = self.playerItem {
+                playerItem.externalMetadata = externalMetadata
+                print("🎬 [Player] Set external metadata with \(externalMetadata.count) items")
+            }
+        }
+        #endif
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
         print("🎬 [Player] Set Now Playing metadata: \(media.title)")
@@ -453,7 +550,7 @@ class VideoPlayerManager: ObservableObject {
 
         // Play command
         commandCenter.playCommand.isEnabled = true
-        commandCenter.playCommand.addTarget { [weak self] _ in
+        commandCenter.playCommand.addTarget { _ in
             player.play()
             print("🎮 [RemoteCommands] Play command executed")
             return .success
@@ -461,7 +558,7 @@ class VideoPlayerManager: ObservableObject {
 
         // Pause command
         commandCenter.pauseCommand.isEnabled = true
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
+        commandCenter.pauseCommand.addTarget { _ in
             player.pause()
             print("🎮 [RemoteCommands] Pause command executed")
             return .success
@@ -469,7 +566,7 @@ class VideoPlayerManager: ObservableObject {
 
         // Toggle play/pause
         commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+        commandCenter.togglePlayPauseCommand.addTarget { _ in
             if player.rate > 0 {
                 player.pause()
                 print("🎮 [RemoteCommands] Toggle pause executed")
@@ -483,7 +580,7 @@ class VideoPlayerManager: ObservableObject {
         // Skip forward (15 seconds)
         commandCenter.skipForwardCommand.isEnabled = true
         commandCenter.skipForwardCommand.preferredIntervals = [15]
-        commandCenter.skipForwardCommand.addTarget { [weak self] event in
+        commandCenter.skipForwardCommand.addTarget { event in
             if let skipEvent = event as? MPSkipIntervalCommandEvent {
                 let currentTime = player.currentTime()
                 let newTime = CMTimeAdd(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
@@ -497,7 +594,7 @@ class VideoPlayerManager: ObservableObject {
         // Skip backward (15 seconds)
         commandCenter.skipBackwardCommand.isEnabled = true
         commandCenter.skipBackwardCommand.preferredIntervals = [15]
-        commandCenter.skipBackwardCommand.addTarget { [weak self] event in
+        commandCenter.skipBackwardCommand.addTarget { event in
             if let skipEvent = event as? MPSkipIntervalCommandEvent {
                 let currentTime = player.currentTime()
                 let newTime = CMTimeSubtract(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
@@ -746,8 +843,8 @@ class VideoPlayerManager: ObservableObject {
 
             // Add artwork if available
             if let thumbPath = chapter.thumb,
-               let server = playerViewController?.player?.currentItem?.accessLog()?.description,
-               let thumbURL = URL(string: thumbPath) {
+               let _ = playerViewController?.player?.currentItem?.accessLog()?.description,
+               let _ = URL(string: thumbPath) {
                 let artworkItem = AVMutableMetadataItem()
                 artworkItem.identifier = .commonIdentifierArtwork
                 // Note: Would need to fetch image data for full implementation
@@ -786,6 +883,45 @@ class VideoPlayerManager: ObservableObject {
             await player.seek(to: time)
             print("📖 [Chapters] Jumped to chapter: \(chapter.title ?? "Untitled")")
         }
+    }
+
+    // MARK: - Skip Intro (tvOS 16.0+)
+
+    /// Configure skip intro using interstitial time ranges
+    @available(tvOS 16.0, *)
+    private func configureSkipIntro(for ratingKey: String, client: PlexAPIClient) async {
+        do {
+            // Fetch skip intro data from Plex
+            let markers = try await client.getMediaMarkers(ratingKey: ratingKey)
+
+            // Find intro marker
+            if let introMarker = markers.first(where: { $0.type == "intro" }) {
+                let startTime = CMTime(seconds: introMarker.start, preferredTimescale: 600)
+                let endTime = CMTime(seconds: introMarker.end, preferredTimescale: 600)
+                let duration = CMTimeSubtract(endTime, startTime)
+
+                let timeRange = CMTimeRange(start: startTime, duration: duration)
+
+                // Create interstitial time range for skip intro
+                #if os(tvOS)
+                if let playerItem = self.playerItem {
+                    let interstitial = AVInterstitialTimeRange(timeRange: timeRange)
+                    playerItem.interstitialTimeRanges = [interstitial]
+                    print("⏩ [SkipIntro] Configured skip intro at \(introMarker.start)s - \(introMarker.end)s")
+                }
+                #endif
+            }
+        } catch {
+            print("⚠️ [SkipIntro] Failed to fetch intro markers: \(error)")
+        }
+    }
+
+    /// Play the next episode
+    func playNextEpisode(_ episode: PlexMetadata) async {
+        print("📺 [NextEp] Playing next episode: \(episode.title)")
+        // Note: This requires re-initializing the player with new media
+        // The view layer will handle dismissing and presenting new VideoPlayerView
+        showNextEpisodePrompt = false
     }
 
     func cleanup() {

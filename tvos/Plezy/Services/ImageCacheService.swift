@@ -22,12 +22,27 @@ class ImageCacheService {
     private var activeDownloads: [URL: Task<UIImage?, Never>] = [:]
     private let downloadLock = NSLock()
 
-    // Default cache limits
-    private let memoryCacheCountLimit = 100  // Max 100 images in memory
-    private let memoryCacheTotalCostLimit = 50 * 1024 * 1024  // 50 MB max memory
-    private let diskCacheSizeLimit = 200 * 1024 * 1024  // 200 MB max disk
+    // Optimized URLSession for image downloads
+    private let imageSession: URLSession
+
+    // Increased cache limits for better performance
+    private let memoryCacheCountLimit = 200  // Max 200 images in memory (increased from 100)
+    private let memoryCacheTotalCostLimit = 100 * 1024 * 1024  // 100 MB max memory (increased from 50)
+    private let diskCacheSizeLimit = 500 * 1024 * 1024  // 500 MB max disk (increased from 200)
 
     private init() {
+        // Configure optimized URLSession for image downloads
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 30
+        configuration.httpMaximumConnectionsPerHost = 8 // Allow more concurrent image downloads
+        configuration.requestCachePolicy = .returnCacheDataElseLoad
+        configuration.urlCache = URLCache(
+            memoryCapacity: 50 * 1024 * 1024,
+            diskCapacity: 100 * 1024 * 1024
+        )
+        self.imageSession = URLSession(configuration: configuration)
+
         // Set up memory cache limits
         memoryCache.countLimit = memoryCacheCountLimit
         memoryCache.totalCostLimit = memoryCacheTotalCostLimit
@@ -103,7 +118,7 @@ class ImageCacheService {
         print("⬇️ [ImageCache] Downloading: \(url.lastPathComponent)")
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await imageSession.data(from: url)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   (200...299).contains(httpResponse.statusCode) else {

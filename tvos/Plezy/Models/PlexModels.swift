@@ -511,6 +511,23 @@ struct PlexChapter: Codable, Identifiable {
     }
 }
 
+// MARK: - Media Markers (Skip Intro, Credits)
+
+struct PlexMediaMarker: Codable, Identifiable {
+    let id: Int
+    let type: String  // "intro", "credits", etc.
+    let startTimeOffset: Int
+    let endTimeOffset: Int
+
+    var start: TimeInterval {
+        TimeInterval(startTimeOffset) / 1000.0
+    }
+
+    var end: TimeInterval {
+        TimeInterval(endTimeOffset) / 1000.0
+    }
+}
+
 // MARK: - API Response Wrappers
 
 struct PlexResponse<T: Codable>: Codable {
