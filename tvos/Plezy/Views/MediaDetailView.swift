@@ -513,7 +513,7 @@ struct EpisodesRow: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 28) {
                     ForEach(episodes) { episode in
                         EpisodeThumbnail(
                             episode: episode,
@@ -531,7 +531,7 @@ struct EpisodesRow: View {
                     }
                 }
                 .padding(.horizontal, horizontalPadding)
-                .padding(.vertical, 30) // Accommodate scale effect and shadow overflow
+                .padding(.vertical, 20) // Accommodate scale effect and shadow overflow
             }
             .onAppear {
                 if let first = episodes.first(where: { !$0.isWatched }) {
@@ -561,16 +561,15 @@ struct EpisodeThumbnail: View {
 
     // Fixed card dimensions - never changes with focus
     private let cardWidth: CGFloat = 280
-    private let cardHeight: CGFloat = 190
-    private let thumbHeight: CGFloat = 158
+    private let cardHeight: CGFloat = 158
     private let cornerRadius: CGFloat = DesignTokens.cornerRadiusMedium
 
     var body: some View {
         Button(action: onPlay) {
-            // Single unified card structure - same for focused and unfocused
-            ZStack(alignment: .bottom) {
-                // Layer 1: Thumbnail image
-                VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Thumbnail card (clipped)
+                ZStack {
+                    // Layer 1: Thumbnail image
                     CachedAsyncImage(url: thumbnailURL) { image in
                         image
                             .resizable()
@@ -580,30 +579,40 @@ struct EpisodeThumbnail: View {
                             .fill(Color.gray.opacity(0.2))
                             .overlay(Image(systemName: "tv").foregroundColor(.gray))
                     }
-                    .frame(width: cardWidth, height: thumbHeight)
+                    .frame(width: cardWidth, height: cardHeight)
                     .clipped()
 
-                    Spacer(minLength: 0)
-                }
+                    // Layer 2: Progress bar (if applicable)
+                    if episode.progress > 0 && episode.progress < 0.98 {
+                        VStack {
+                            Spacer()
+                            ProgressBar(progress: episode.progress)
+                                .frame(height: 4)
+                                .padding(.horizontal, 4)
+                                .padding(.bottom, 4)
+                        }
+                    }
 
-                // Layer 2: Gradient overlay for text contrast
-                VStack {
-                    Spacer()
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.85)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 80)
+                    // Layer 3: Play overlay on focus (styling only)
+                    if isFocused {
+                        Color.black.opacity(0.2)
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
+                    }
                 }
+                // Fixed frame - NEVER changes with focus
+                .frame(width: cardWidth, height: cardHeight)
+                // Single clipShape on the card
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
 
-                // Layer 3: Episode label (inside card, always visible)
+                // Episode label (below card, like Continue Watching)
                 VStack(alignment: .leading, spacing: 2) {
-                    Spacer()
                     if let s = episode.parentIndex, let e = episode.index {
                         Text("S\(s) E\(e)")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(.gray)
                     }
                     Text(episode.title)
                         .font(.system(size: 14, weight: .semibold))
@@ -611,39 +620,15 @@ struct EpisodeThumbnail: View {
                         .lineLimit(1)
                 }
                 .frame(width: cardWidth, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
-
-                // Layer 4: Progress bar (if applicable)
-                if episode.progress > 0 && episode.progress < 0.98 {
-                    VStack {
-                        Spacer()
-                        ProgressBar(progress: episode.progress)
-                            .frame(height: 4)
-                    }
-                }
-
-                // Layer 5: Play overlay on focus (styling only, no layout change)
-                if isFocused {
-                    Color.black.opacity(0.2)
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 44))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
-                }
             }
-            // Fixed frame - NEVER changes with focus
-            .frame(width: cardWidth, height: cardHeight)
-            // Single clipShape on outer container
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
-        // Focus effects: scale + shadow only (matches MediaCard pattern)
-        .scaleEffect(isFocused ? 1.10 : 1.0)
+        // Focus effects: scale + shadow only (reduced scale to avoid overlap)
+        .scaleEffect(isFocused ? 1.05 : 1.0)
         .shadow(
-            color: .black.opacity(isFocused ? 0.7 : 0.4),
-            radius: isFocused ? 40 : 16,
+            color: .black.opacity(isFocused ? 0.6 : 0.3),
+            radius: isFocused ? 20 : 8,
             x: 0,
-            y: isFocused ? 20 : 8
+            y: isFocused ? 10 : 4
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
         // Use MediaCardButtonStyle to avoid system focus backgrounds
