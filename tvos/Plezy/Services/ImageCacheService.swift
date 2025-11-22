@@ -158,9 +158,23 @@ class ImageCacheService {
             memoryCache.setObject(downsampledImage, forKey: cacheKey, cost: memoryCost)
 
             // Save downsampled image to disk asynchronously
+            // Use PNG for images with transparency (logos), JPEG for opaque images (photos)
             Task.detached(priority: .background) {
-                if let jpegData = downsampledImage.jpegData(compressionQuality: 0.8) {
-                    await self.saveToDisk(image: downsampledImage, url: url, data: jpegData)
+                let hasAlpha = downsampledImage.cgImage?.alphaInfo != .none &&
+                               downsampledImage.cgImage?.alphaInfo != .noneSkipFirst &&
+                               downsampledImage.cgImage?.alphaInfo != .noneSkipLast
+
+                let imageData: Data?
+                if hasAlpha {
+                    // PNG preserves transparency for logos
+                    imageData = downsampledImage.pngData()
+                } else {
+                    // JPEG for photos (smaller file size)
+                    imageData = downsampledImage.jpegData(compressionQuality: 0.8)
+                }
+
+                if let data = imageData {
+                    await self.saveToDisk(image: downsampledImage, url: url, data: data)
                 }
             }
 
