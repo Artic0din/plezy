@@ -193,14 +193,31 @@ struct LibraryContentView: View {
                 await loadContent()
             }
         }
-        .sheet(item: $selectedMedia) { media in
-            let _ = print("📱 [LibraryContent] Sheet presenting MediaDetailView for: \(media.title)")
+        .fullScreenCover(item: $selectedMedia) { media in
+            let _ = print("📱 [LibraryContent] FullScreenCover presenting MediaDetailView for: \(media.title)")
             MediaDetailView(media: media)
                 .environmentObject(authService)
                 .onAppear {
                     print("📱 [LibraryContent] MediaDetailView appeared for: \(media.title)")
                 }
         }
+        .onChange(of: selectedMedia) { oldValue, newValue in
+            // Refresh content when returning from media detail (watch status may have changed)
+            if oldValue != nil && newValue == nil {
+                print("📚 [LibraryContent] Returned from media detail, refreshing content...")
+                Task {
+                    await refreshContent()
+                }
+            }
+        }
+    }
+
+    /// Refresh content by invalidating cache and reloading
+    private func refreshContent() async {
+        guard let serverID = authService.selectedServer?.clientIdentifier else { return }
+        let cacheKey = CacheService.libraryContentKey(serverID: serverID, libraryKey: library.key)
+        cache.invalidate(cacheKey)
+        await loadContent()
     }
 
     private func loadContent() async {
@@ -343,46 +360,25 @@ struct FilterButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 20, weight: .semibold, design: .default))
-                .foregroundStyle(isSelected ? .black : .white)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 14)
+                .foregroundColor(isSelected ? .white : .white.opacity(0.7))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
                 .background(
-                    ZStack {
-                        if isSelected {
-                            // Selected state with Liquid Glass
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium, style: .continuous)
-                                .fill(.white)
-                        } else {
-                            // Unselected state with subtle material
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium, style: .continuous)
-                                .fill(.regularMaterial.opacity(DesignTokens.materialOpacitySubtle))
-                        }
-                    }
+                    Capsule()
+                        .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(isFocused ? 0.2 : 0.1))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium, style: .continuous)
+                    Capsule()
                         .strokeBorder(
-                            isFocused && !isSelected ? Color.white.opacity(0.5) : Color.clear,
+                            isFocused ? Color.white.opacity(0.5) : Color.clear,
                             lineWidth: 2
                         )
                 )
         }
-        .buttonStyle(FilterButtonStyle(isFocused: $isFocused, isSelected: isSelected))
-    }
-}
-
-/// Button style for filter buttons with Apple's focus handling
-/// Focus state is tracked for visual styling only - Apple handles focus behavior
-struct FilterButtonStyle: ButtonStyle {
-    let isFocused: FocusState<Bool>.Binding
-    let isSelected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .focused(isFocused)
-            .focusable()
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(DesignTokens.Animation.quick.spring(), value: configuration.isPressed)
+        .buttonStyle(MediaCardButtonStyle())
+        .focused($isFocused)
+        .scaleEffect(isFocused ? 1.05 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
     }
 }
 
@@ -396,7 +392,8 @@ struct GridWidthPreferenceKey: PreferenceKey {
     }
 }
 
-/// Grid layout view with 5 columns and consistent spacing
+/// Grid layout view with 4 columns and consistent spacing
+/// Uses CardRowLayout constants for consistency with home screen rows
 struct GridLayoutView: View {
     let items: [PlexMetadata]
     let hasMoreItems: Bool
@@ -405,23 +402,12 @@ struct GridLayoutView: View {
     let onLoadMore: () -> Void
 
     @EnvironmentObject var authService: PlexAuthService
-    @State private var availableWidth: CGFloat = 1920
 
-    // Layout constants
-    private let columnsCount = 5
-    private let spacing: CGFloat = 48
-    private let aspectRatio: CGFloat = 201.0 / 358.0 // Height / Width from .libraryGrid
-
-    private var cardWidth: CGFloat {
-        // Calculate card width: availableWidth - edge padding - internal spacing
-        let totalHorizontalSpacing = (2 * spacing) + (CGFloat(columnsCount - 1) * spacing)
-        let availableForCards = availableWidth - totalHorizontalSpacing
-        return availableForCards / CGFloat(columnsCount)
-    }
-
-    private var cardHeight: CGFloat {
-        cardWidth * aspectRatio
-    }
+    // Use CardRowLayout constants for consistency across the app
+    private var cardWidth: CGFloat { CardRowLayout.cardWidth }
+    private var cardHeight: CGFloat { CardRowLayout.cardHeight }
+    private var spacing: CGFloat { CardRowLayout.cardSpacing }
+    private let columnsCount = Int(CardRowLayout.visibleCardCount)
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: columnsCount)
@@ -463,10 +449,7 @@ struct GridLayoutView: View {
                 }
             }
         }
-        .padding(.horizontal, spacing)
-        .onPreferenceChange(GridWidthPreferenceKey.self) { width in
-            availableWidth = width
-        }
+        .padding(.horizontal, CardRowLayout.horizontalPadding)
     }
 }
 

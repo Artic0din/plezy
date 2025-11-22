@@ -34,7 +34,6 @@ class PlexAPIClient {
     private var headers: [String: String] {
         var headers = [
             "Accept": "application/json",
-            "Content-Type": "application/json",
             "X-Plex-Product": Self.plexProduct,
             "X-Plex-Version": Self.plexVersion,
             "X-Plex-Client-Identifier": Self.plexClientIdentifier,
@@ -106,11 +105,15 @@ class PlexAPIClient {
         for attempt in 0..<retries {
             if attempt > 0 {
                 let delay = min(pow(2.0, Double(attempt)), 16.0) // Cap at 16 seconds
+                #if DEBUG
                 print("🔄 [API] Retry attempt \(attempt + 1)/\(retries) after \(delay)s delay")
+                #endif
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
 
+            #if DEBUG
             print("🌐 [API] \(method) \(url) (attempt \(attempt + 1)/\(retries))")
+            #endif
 
             var request = URLRequest(url: url)
             request.httpMethod = method
@@ -127,25 +130,22 @@ class PlexAPIClient {
                     throw PlexAPIError.invalidResponse
                 }
 
+                #if DEBUG
                 print("🌐 [API] Response: \(httpResponse.statusCode) - \(data.count) bytes")
+                #endif
 
                 guard (200...299).contains(httpResponse.statusCode) else {
                     // Provide specific error messages for common HTTP status codes
                     switch httpResponse.statusCode {
                     case 401:
-                        print("❌ [API] Unauthorized - invalid or expired token")
                         throw PlexAPIError.unauthorized
                     case 404:
-                        print("❌ [API] Not found - resource doesn't exist")
                         throw PlexAPIError.notFound
                     case 429:
-                        print("❌ [API] Rate limited - too many requests")
                         throw PlexAPIError.rateLimited
                     case 500...599:
-                        print("❌ [API] Server error (\(httpResponse.statusCode))")
                         throw PlexAPIError.serverError(statusCode: httpResponse.statusCode)
                     default:
-                        print("❌ [API] HTTP error \(httpResponse.statusCode)")
                         throw PlexAPIError.httpError(statusCode: httpResponse.statusCode)
                     }
                 }
@@ -155,40 +155,39 @@ class PlexAPIClient {
                 decoder.keyDecodingStrategy = .useDefaultKeys
 
                 do {
-                    // Debug: Print first 500 characters of response for inspection
+                    #if DEBUG
+                    // Debug: Print first 200 characters of response for inspection
                     if let jsonString = String(data: data, encoding: .utf8) {
-                        let preview = String(jsonString.prefix(500))
-                        print("🔍 [API] Response preview: \(preview)")
+                        let preview = String(jsonString.prefix(200))
+                        print("🔍 [API] Response preview: \(preview)...")
                     }
+                    #endif
                     let result = try decoder.decode(T.self, from: data)
-                    print("✅ [API] Request successful on attempt \(attempt + 1)")
                     return result
                 } catch {
+                    #if DEBUG
                     print("🔴 [API] Decoding error: \(error)")
                     if let jsonString = String(data: data, encoding: .utf8) {
-                        let preview = String(jsonString.prefix(1000))
+                        let preview = String(jsonString.prefix(500))
                         print("🔴 [API] Failed JSON preview: \(preview)")
                     }
+                    #endif
                     throw PlexAPIError.decodingError(error)
                 }
             } catch {
                 lastError = error
+                #if DEBUG
                 print("⚠️ [API] Attempt \(attempt + 1)/\(retries) failed: \(error.localizedDescription)")
+                #endif
 
                 // Don't retry on certain errors - they won't succeed on retry
                 if let apiError = error as? PlexAPIError {
                     switch apiError {
                     case .unauthorized, .notFound, .decodingError:
-                        print("❌ [API] Non-retryable error, failing immediately")
                         throw apiError
                     default:
                         break
                     }
-                }
-
-                // If this was the last attempt, don't sleep
-                if attempt == retries - 1 {
-                    print("❌ [API] All retry attempts exhausted")
                 }
             }
         }
@@ -267,7 +266,9 @@ class PlexAPIClient {
     }
 
     func getOnDeck() async throws -> [PlexMetadata] {
+        #if DEBUG
         print("📚 [API] Requesting OnDeck from /library/onDeck")
+        #endif
         let queryItems = [
             URLQueryItem(name: "includeImages", value: "1"),
             URLQueryItem(name: "includeExtras", value: "1"),
@@ -278,82 +279,82 @@ class PlexAPIClient {
             queryItems: queryItems
         )
         let container = response.MediaContainer
+        #if DEBUG
         print("📚 [API] OnDeck response - size: \(container.size), items: \(container.items.count)")
+        #endif
 
-        // Debug: Check which items have clearLogos in the initial response
-        for item in container.items {
-            let hasLogo = item.clearLogo != nil
-            let itemType = item.type ?? "unknown"
-            print("📚 [API] Item '\(item.title)' (type: \(itemType)) - has clearLogo: \(hasLogo)")
-        }
-
-        // Enrich episodes with show logos
+        // Enrich episodes with show logos using parallel fetching
         // The onDeck endpoint returns episode metadata, but clearLogos belong to the show (grandparent) level.
-        // For episodes without clearLogos, we fetch the show metadata to get the show's logo.
-        // This ensures logos display correctly in the Continue Watching row.
         var enrichedItems = container.items
-        var showLogoCache: [String: String?] = [:] // Cache show logos by grandparentRatingKey to avoid duplicate API calls
 
-        for (index, item) in enrichedItems.enumerated() {
-            // For episodes: fetch show (grandparent) metadata to get the show's logo
-            if item.type == "episode" && item.clearLogo == nil, let grandparentKey = item.grandparentRatingKey {
-                // Check cache first to avoid duplicate API calls for the same show
-                if let cachedLogo = showLogoCache[grandparentKey] {
-                    if let logo = cachedLogo {
-                        print("📚 [API] Using cached clearLogo for episode: \(item.title)")
-                        var updatedItem = item
-                        let logoImage = PlexImage(type: "clearLogo", url: logo)
-                        updatedItem.Image = (item.Image ?? []) + [logoImage]
-                        enrichedItems[index] = updatedItem
-                    }
-                } else {
-                    print("📚 [API] Episode \(item.title) missing clearLogo, fetching show metadata from ratingKey: \(grandparentKey)")
-                    do {
-                        let showMetadata = try await getMetadata(ratingKey: grandparentKey)
-                        showLogoCache[grandparentKey] = showMetadata.clearLogo
+        // Collect unique keys that need fetching (episodes by grandparentRatingKey, movies by ratingKey)
+        var showKeysToFetch: Set<String> = []
+        var movieKeysToFetch: Set<String> = []
 
-                        if let showLogo = showMetadata.clearLogo {
-                            print("📚 [API] Found clearLogo for show: \(showMetadata.title)")
-                            var updatedItem = item
-                            let logoImage = PlexImage(type: "clearLogo", url: showLogo)
-                            updatedItem.Image = (item.Image ?? []) + [logoImage]
-                            enrichedItems[index] = updatedItem
-                        } else {
-                            print("📚 [API] Show \(showMetadata.title) has no clearLogo")
-                        }
-                    } catch {
-                        print("📚 [API] Failed to fetch show metadata: \(error)")
-                        showLogoCache[grandparentKey] = nil // Cache the failure
-                    }
-                }
-            }
-
-            // For movies: fetch movie metadata if clearLogo is missing
-            else if item.type == "movie" && item.clearLogo == nil, let ratingKey = item.ratingKey {
-                print("📚 [API] Movie '\(item.title)' missing clearLogo, fetching full metadata from ratingKey: \(ratingKey)")
-                do {
-                    let movieMetadata = try await getMetadata(ratingKey: ratingKey)
-                    if let movieLogo = movieMetadata.clearLogo {
-                        print("📚 [API] Found clearLogo for movie: \(movieMetadata.title)")
-                        var updatedItem = item
-                        let logoImage = PlexImage(type: "clearLogo", url: movieLogo)
-                        updatedItem.Image = (item.Image ?? []) + [logoImage]
-                        enrichedItems[index] = updatedItem
-                    } else {
-                        print("📚 [API] Movie \(movieMetadata.title) has no clearLogo available")
-                    }
-                } catch {
-                    print("📚 [API] Failed to fetch movie metadata: \(error)")
-                }
-            }
-        }
-
-        // Debug: Summary of enrichment results
-        print("📚 [API] Enrichment complete. Summary:")
         for item in enrichedItems {
-            let hasLogo = item.clearLogo != nil
-            print("📚 [API]   - '\(item.title)' (type: \(item.type ?? "unknown")) - has clearLogo after enrichment: \(hasLogo)")
+            if item.type == "episode" && item.clearLogo == nil, let grandparentKey = item.grandparentRatingKey {
+                showKeysToFetch.insert(grandparentKey)
+            } else if item.type == "movie" && item.clearLogo == nil, let ratingKey = item.ratingKey {
+                movieKeysToFetch.insert(ratingKey)
+            }
         }
+
+        // Fetch all show/movie metadata in parallel using TaskGroup
+        var logoCache: [String: String?] = [:]
+
+        await withTaskGroup(of: (String, String?).self) { group in
+            // Add tasks for shows
+            for showKey in showKeysToFetch {
+                group.addTask {
+                    do {
+                        let metadata = try await self.getMetadata(ratingKey: showKey)
+                        return (showKey, metadata.clearLogo)
+                    } catch {
+                        return (showKey, nil)
+                    }
+                }
+            }
+
+            // Add tasks for movies
+            for movieKey in movieKeysToFetch {
+                group.addTask {
+                    do {
+                        let metadata = try await self.getMetadata(ratingKey: movieKey)
+                        return (movieKey, metadata.clearLogo)
+                    } catch {
+                        return (movieKey, nil)
+                    }
+                }
+            }
+
+            // Collect results
+            for await (key, logo) in group {
+                logoCache[key] = logo
+            }
+        }
+
+        // Apply logos to items
+        for (index, item) in enrichedItems.enumerated() {
+            if item.type == "episode" && item.clearLogo == nil, let grandparentKey = item.grandparentRatingKey {
+                if let logo = logoCache[grandparentKey] ?? nil {
+                    var updatedItem = item
+                    let logoImage = PlexImage(type: "clearLogo", url: logo)
+                    updatedItem.Image = (item.Image ?? []) + [logoImage]
+                    enrichedItems[index] = updatedItem
+                }
+            } else if item.type == "movie" && item.clearLogo == nil, let ratingKey = item.ratingKey {
+                if let logo = logoCache[ratingKey] ?? nil {
+                    var updatedItem = item
+                    let logoImage = PlexImage(type: "clearLogo", url: logo)
+                    updatedItem.Image = (item.Image ?? []) + [logoImage]
+                    enrichedItems[index] = updatedItem
+                }
+            }
+        }
+
+        #if DEBUG
+        print("📚 [API] Enrichment complete: \(enrichedItems.count) items, \(showKeysToFetch.count) shows + \(movieKeysToFetch.count) movies fetched in parallel")
+        #endif
 
         return enrichedItems
     }
@@ -407,7 +408,29 @@ class PlexAPIClient {
             path: "/hubs/search",
             queryItems: queryItems
         )
-        return response.MediaContainer.items
+
+        // The /hubs/search endpoint returns Hub objects with nested metadata
+        // Extract metadata from each hub and filter for movies and shows only (no episodes)
+        // Deduplicate by ratingKey since same items can appear in multiple hubs
+        var results: [PlexMetadata] = []
+        var seenRatingKeys = Set<String>()
+        let validTypes = Set(["movie", "show"])
+
+        if let hubs = response.MediaContainer.hub {
+            for hub in hubs {
+                // Only include hubs with valid media types
+                if validTypes.contains(hub.type), let metadata = hub.metadata {
+                    for item in metadata {
+                        if let ratingKey = item.ratingKey, !seenRatingKeys.contains(ratingKey) {
+                            seenRatingKeys.insert(ratingKey)
+                            results.append(item)
+                        }
+                    }
+                }
+            }
+        }
+
+        return results
     }
 
     // MARK: - Playback & Progress
@@ -481,6 +504,205 @@ class PlexAPIClient {
         case paused
         case stopped
     }
+
+    // MARK: - Playback Decision & Transcoding
+
+    /// Playback decision result containing URL and method
+    struct PlaybackDecision {
+        enum PlaybackMethod {
+            case directPlay
+            case directStream
+            case transcode
+        }
+
+        let url: URL
+        let method: PlaybackMethod
+        let sessionID: String?
+    }
+
+    /// Get the best playback URL for a media item with fallback strategy
+    /// Order: Direct Play → Direct Stream → Transcode
+    func getPlaybackURL(
+        partKey: String,
+        mediaKey: String,
+        ratingKey: String,
+        duration: Int? = nil
+    ) async throws -> PlaybackDecision {
+        // Generate a unique session ID for this playback
+        let sessionID = UUID().uuidString
+        print("🎬 [Playback] Starting playback decision for partKey: \(partKey)")
+
+        // Step 1: Try Direct Play first
+        if let directPlayURL = buildDirectPlayURL(partKey: partKey) {
+            print("🎬 [Playback] Checking Direct Play: \(directPlayURL)")
+            if await canPlayDirectly(url: directPlayURL) {
+                print("✅ [Playback] Direct Play available")
+                return PlaybackDecision(url: directPlayURL, method: .directPlay, sessionID: sessionID)
+            }
+            print("⚠️ [Playback] Direct Play check failed, trying Direct Stream...")
+        } else {
+            print("⚠️ [Playback] Could not build Direct Play URL")
+        }
+
+        // Step 2: Try Direct Stream (container remux without transcoding)
+        if let directStreamURL = buildDirectStreamURL(partKey: partKey, sessionID: sessionID) {
+            print("🎬 [Playback] Checking Direct Stream: \(directStreamURL)")
+            if await canPlayDirectly(url: directStreamURL) {
+                print("✅ [Playback] Direct Stream available")
+                return PlaybackDecision(url: directStreamURL, method: .directStream, sessionID: sessionID)
+            }
+            print("⚠️ [Playback] Direct Stream check failed")
+        } else {
+            print("⚠️ [Playback] Could not build Direct Stream URL")
+        }
+
+        // Step 3: Fall back to Transcode (always works)
+        print("🎬 [Playback] Falling back to Transcode...")
+        guard let transcodeURL = buildTranscodeURL(
+            partKey: partKey,
+            mediaKey: mediaKey,
+            ratingKey: ratingKey,
+            sessionID: sessionID,
+            duration: duration
+        ) else {
+            // Last resort: return direct play URL even if HEAD check failed
+            if let directPlayURL = buildDirectPlayURL(partKey: partKey) {
+                print("⚠️ [Playback] Transcode URL failed, using Direct Play as fallback")
+                return PlaybackDecision(url: directPlayURL, method: .directPlay, sessionID: sessionID)
+            }
+            throw PlexAPIError.invalidURL
+        }
+        print("✅ [Playback] Using Transcode URL: \(transcodeURL)")
+        return PlaybackDecision(url: transcodeURL, method: .transcode, sessionID: sessionID)
+    }
+
+    /// Build direct play URL (original file)
+    private func buildDirectPlayURL(partKey: String) -> URL? {
+        var urlString = baseURL.absoluteString + partKey
+        if !urlString.contains("?") {
+            urlString += "?"
+        } else {
+            urlString += "&"
+        }
+        if let token = accessToken {
+            urlString += "X-Plex-Token=\(token)"
+        }
+        return URL(string: urlString)
+    }
+
+    /// Build direct stream URL (remuxed container, no transcoding)
+    private func buildDirectStreamURL(partKey: String, sessionID: String) -> URL? {
+        // Direct stream uses /video/:/transcode/universal/start.m3u8 with directStream=1
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.path = "/video/:/transcode/universal/start.m3u8"
+
+        var queryItems = [
+            URLQueryItem(name: "path", value: partKey),
+            URLQueryItem(name: "session", value: sessionID),
+            URLQueryItem(name: "protocol", value: "hls"),
+            URLQueryItem(name: "directPlay", value: "0"),
+            URLQueryItem(name: "directStream", value: "1"),
+            URLQueryItem(name: "directStreamAudio", value: "1"),
+            URLQueryItem(name: "copyts", value: "1"),
+            URLQueryItem(name: "mediaBufferSize", value: "50000"),
+            URLQueryItem(name: "X-Plex-Client-Identifier", value: Self.plexClientIdentifier),
+            URLQueryItem(name: "X-Plex-Product", value: Self.plexProduct),
+            URLQueryItem(name: "X-Plex-Platform", value: Self.plexPlatform)
+        ]
+
+        if let token = accessToken {
+            queryItems.append(URLQueryItem(name: "X-Plex-Token", value: token))
+        }
+
+        components?.queryItems = queryItems
+        return components?.url
+    }
+
+    /// Build transcode URL (full transcoding)
+    private func buildTranscodeURL(
+        partKey: String,
+        mediaKey: String,
+        ratingKey: String,
+        sessionID: String,
+        duration: Int?
+    ) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.path = "/video/:/transcode/universal/start.m3u8"
+
+        // Apple TV supports H.264/HEVC up to 4K, AAC/AC3/EAC3 audio
+        var queryItems = [
+            URLQueryItem(name: "path", value: "/library/metadata/\(ratingKey)"),
+            URLQueryItem(name: "session", value: sessionID),
+            URLQueryItem(name: "protocol", value: "hls"),
+            URLQueryItem(name: "directPlay", value: "0"),
+            URLQueryItem(name: "directStream", value: "0"),
+            // Video settings - prefer HEVC for better quality/bandwidth
+            URLQueryItem(name: "videoCodec", value: "h264,hevc"),
+            URLQueryItem(name: "videoResolution", value: "3840x2160"),
+            URLQueryItem(name: "maxVideoBitrate", value: "40000"),
+            // Audio settings - Apple TV supports these codecs
+            URLQueryItem(name: "audioCodec", value: "aac,ac3,eac3"),
+            URLQueryItem(name: "audioBoost", value: "100"),
+            // Subtitles
+            URLQueryItem(name: "subtitleSize", value: "100"),
+            URLQueryItem(name: "subtitles", value: "auto"),
+            // Buffer settings
+            URLQueryItem(name: "mediaBufferSize", value: "50000"),
+            URLQueryItem(name: "copyts", value: "1"),
+            URLQueryItem(name: "hasMDE", value: "1"),
+            // Client identification
+            URLQueryItem(name: "X-Plex-Client-Identifier", value: Self.plexClientIdentifier),
+            URLQueryItem(name: "X-Plex-Product", value: Self.plexProduct),
+            URLQueryItem(name: "X-Plex-Platform", value: Self.plexPlatform),
+            URLQueryItem(name: "X-Plex-Device", value: Self.plexDevice)
+        ]
+
+        if let token = accessToken {
+            queryItems.append(URLQueryItem(name: "X-Plex-Token", value: token))
+        }
+
+        components.queryItems = queryItems
+        return components.url
+    }
+
+    /// Check if a URL can be played directly (HEAD request to verify accessibility)
+    private func canPlayDirectly(url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let success = (200...299).contains(httpResponse.statusCode)
+                print("🎬 [Playback] HEAD check for \(url.path): \(httpResponse.statusCode) - \(success ? "OK" : "FAILED")")
+                return success
+            }
+            return false
+        } catch {
+            print("🎬 [Playback] HEAD check failed for \(url.path): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Stop a transcode session
+    func stopTranscode(sessionID: String) async {
+        let queryItems = [
+            URLQueryItem(name: "session", value: sessionID)
+        ]
+
+        do {
+            let _: PlexMediaContainer<PlexMetadata> = try await request(
+                path: "/video/:/transcode/universal/stop",
+                queryItems: queryItems
+            )
+            print("🎬 [Playback] Stopped transcode session: \(sessionID)")
+        } catch {
+            print("⚠️ [Playback] Failed to stop transcode session: \(error)")
+        }
+    }
 }
 
 // MARK: - Plex.tv API Client
@@ -493,34 +715,127 @@ extension PlexAPIClient {
     // MARK: - PIN Authentication
 
     func createPin() async throws -> PlexPin {
-        struct PinRequest: Encodable {
-            let strong: Bool = false
-        }
-
         struct PinResponse: Decodable {
             let id: Int
             let code: String
+            let qr: String?  // QR code image URL from Plex
         }
 
-        let body = try JSONEncoder().encode(PinRequest())
+        // Use strong=false (default) for short 4-character PIN codes
+        // tvOS users must manually type the code at plex.tv/link
+        // (Flutter uses strong=true because it can redirect to an auth URL)
         let response: PinResponse = try await request(
             path: "/api/v2/pins",
-            method: "POST",
-            body: body
+            method: "POST"
         )
 
-        return PlexPin(id: response.id, code: response.code, authToken: nil)
+        // Generate auth URL for app.plex.tv/auth (more reliable than plex.tv/link)
+        let authURL = generateAuthURL(code: response.code)
+
+        print("🔑 [PIN] Created PIN: \(response.code) (ID: \(response.id))")
+        print("🔑 [PIN] Auth URL: \(authURL)")
+        print("🔑 [PIN] QR URL: \(response.qr ?? "none")")
+        return PlexPin(id: response.id, code: response.code, authToken: nil, authURL: authURL, qrURL: response.qr)
+    }
+
+    /// Generate the Plex auth URL for a given PIN code
+    /// This URL can be opened on another device to authenticate
+    private func generateAuthURL(code: String) -> String {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "app.plex.tv"
+        components.path = "/auth"
+
+        // Parameters are passed in the fragment (after #?)
+        let params = [
+            "clientID": Self.plexClientIdentifier,
+            "code": code,
+            "context[device][product]": Self.plexProduct,
+            "context[device][platform]": Self.plexPlatform,
+            "context[device][device]": Self.plexDevice
+        ]
+
+        let queryString = params
+            .map { "\($0.key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }
+            .joined(separator: "&")
+
+        return "https://app.plex.tv/auth#?\(queryString)"
     }
 
     func checkPin(id: Int) async throws -> PlexPin {
-        struct PinResponse: Decodable {
-            let id: Int
-            let code: String
-            let authToken: String?
+        // First, get raw response to debug
+        let (rawResponse, rawString) = try await requestRawWithString(path: "/api/v2/pins/\(id)")
+
+        // Debug: print all keys to see what Plex returns
+        print("🔑 [PIN] Response keys: \(rawResponse.keys.sorted())")
+
+        // Print full raw response for debugging
+        if let authTokenValue = rawResponse["authToken"] {
+            print("🔑 [PIN] authToken raw value: \(authTokenValue) (type: \(type(of: authTokenValue)))")
+        } else {
+            print("🔑 [PIN] authToken key missing from response!")
         }
 
-        let response: PinResponse = try await request(path: "/api/v2/pins/\(id)")
-        return PlexPin(id: response.id, code: response.code, authToken: response.authToken)
+        let pinId = rawResponse["id"] as? Int ?? 0
+        let code = rawResponse["code"] as? String ?? ""
+        let trusted = rawResponse["trusted"] as? Bool ?? false
+
+        // Handle authToken which might be NSNull from JSON
+        var authToken: String? = nil
+        if let tokenValue = rawResponse["authToken"] {
+            if let token = tokenValue as? String, !token.isEmpty {
+                authToken = token
+            }
+        }
+
+        // Debug logging for PIN status
+        let hasToken = authToken != nil && !authToken!.isEmpty
+        print("🔑 [PIN] Status - trusted: \(trusted), hasToken: \(hasToken), authToken: \(authToken?.prefix(20) ?? "nil")...")
+
+        return PlexPin(id: pinId, code: code, authToken: authToken)
+    }
+
+    /// Raw request that returns dictionary and raw string for debugging
+    private func requestRawWithString(path: String) async throws -> ([String: Any], String) {
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+
+        guard let url = urlComponents?.url else {
+            throw PlexAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        // CRITICAL: Bypass cache for PIN checks - we need fresh data from server
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        // Debug: print the request headers
+        print("🔑 [PIN] Request URL: \(url)")
+        print("🔑 [PIN] Request headers - X-Plex-Client-Identifier: \(headers["X-Plex-Client-Identifier"] ?? "nil")")
+
+        let (data, response) = try await session.data(for: request)
+
+        // Get raw string for debugging
+        let rawString = String(data: data, encoding: .utf8) ?? "unable to decode"
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw PlexAPIError.serverError(statusCode: statusCode)
+        }
+
+        do {
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw PlexAPIError.decodingError(NSError(domain: "PlexAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Response is not a dictionary"]))
+            }
+            return (json, rawString)
+        } catch let error as PlexAPIError {
+            throw error
+        } catch {
+            throw PlexAPIError.decodingError(error)
+        }
     }
 
     func getUser() async throws -> PlexUser {
@@ -548,17 +863,62 @@ extension PlexAPIClient {
     // MARK: - Server Discovery
 
     func getServers() async throws -> [PlexServer] {
-        // The /api/v2/resources endpoint returns servers wrapped in MediaContainer.Device
+        // The /api/v2/resources endpoint returns a plain array of resources (not wrapped)
         let queryItems = [
             URLQueryItem(name: "includeHttps", value: "1"),
             URLQueryItem(name: "includeRelay", value: "1")
         ]
 
-        let response: PlexResponse<PlexServer> = try await request(
+        let servers: [PlexServer] = try await requestArray(
             path: "/api/v2/resources",
             queryItems: queryItems
         )
-        return response.MediaContainer.items
+        return servers
+    }
+
+    /// Request that returns an array directly (not wrapped in MediaContainer)
+    private func requestArray<T: Decodable>(
+        path: String,
+        method: String = "GET",
+        queryItems: [URLQueryItem]? = nil
+    ) async throws -> [T] {
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        urlComponents?.queryItems = queryItems
+
+        guard let url = urlComponents?.url else {
+            throw PlexAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        print("🌐 [API] \(method) \(url) (attempt 1/3)")
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PlexAPIError.invalidResponse
+        }
+
+        print("🌐 [API] Response: \(httpResponse.statusCode) - \(data.count) bytes")
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw PlexAPIError.serverError(statusCode: httpResponse.statusCode)
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode([T].self, from: data)
+        } catch {
+            print("🔴 [API] Array decoding error: \(error)")
+            if let dataString = String(data: data, encoding: .utf8) {
+                print("🔴 [API] Response data: \(dataString.prefix(500))")
+            }
+            throw PlexAPIError.decodingError(error)
+        }
     }
 
     // MARK: - Home Users

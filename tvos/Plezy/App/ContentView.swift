@@ -12,6 +12,7 @@ struct ContentView: View {
     @EnvironmentObject var authService: PlexAuthService
     @EnvironmentObject var storageService: StorageService
     @State private var isLoading = true
+    @State private var hasInitialized = false
 
     var body: some View {
         Group {
@@ -24,6 +25,9 @@ struct ContentView: View {
             }
         }
         .task {
+            // Guard against re-initialization if view is recreated
+            guard !hasInitialized else { return }
+            hasInitialized = true
             await initializeApp()
         }
     }

@@ -33,7 +33,7 @@ struct SeasonDetailView: View {
                         }
                         .font(.title3)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(MediaCardButtonStyle())
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(show.title)
@@ -217,7 +217,7 @@ struct EpisodeRow: View {
                                                 }
                                             )
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(MediaCardButtonStyle())
                                     .padding(15)
                                     Spacer()
                                 }
@@ -305,7 +305,7 @@ struct EpisodeRow: View {
             )
             .shadow(color: isFocused ? Color.beaconPurple.opacity(0.4) : .clear, radius: isFocused ? 15 : 0, x: 0, y: isFocused ? 8 : 0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .scaleEffect(isFocused ? 1.08 : 1.0)
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)

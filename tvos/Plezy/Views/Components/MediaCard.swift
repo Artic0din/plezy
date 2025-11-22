@@ -27,9 +27,10 @@ struct MediaCardConfig {
     }
 
     /// Predefined sizes for common use cases
+    /// Larger cards for a more immersive full-screen experience on tvOS
     static let continueWatching = MediaCardConfig(
-        width: 410,
-        height: 231,
+        width: 500,
+        height: 281,
         showProgress: true,
         showLabel: .inside,
         showLogo: true,
@@ -37,8 +38,8 @@ struct MediaCardConfig {
     )
 
     static let libraryGrid = MediaCardConfig(
-        width: 358,
-        height: 201,
+        width: 420,
+        height: 236,
         showProgress: true,
         showLabel: .inside,
         showLogo: true,
@@ -114,12 +115,12 @@ struct MediaCard: View {
                     }
                     .frame(width: config.width, height: config.height)
 
-                    // Layer 2: Gradient overlay for better text contrast
+                    // Layer 2: Gradient overlay for text contrast
                     LinearGradient(
                         gradient: Gradient(colors: [
-                            .clear,
-                            .clear,
-                            .black.opacity(config.showLabel == .inside || config.showProgress ? 0.75 : 0.4)
+                            Color.black.opacity(0.0),
+                            Color.black.opacity(0.3),
+                            Color.black.opacity(config.showLabel == .inside || config.showProgress ? 0.8 : 0.5)
                         ]),
                         startPoint: .top,
                         endPoint: .bottom
@@ -130,6 +131,7 @@ struct MediaCard: View {
                         VStack(alignment: .leading, spacing: 0) {
                             Spacer()
 
+                            // Logo or title
                             HStack {
                                 if let logoURL = logoURL, let clearLogo = media.clearLogo {
                                     CachedAsyncImage(url: logoURL) { image in
@@ -143,7 +145,7 @@ struct MediaCard: View {
                                         maxWidth: config.width * 0.5,
                                         maxHeight: config.height * 0.25
                                     )
-                                    .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
+                                    .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
                                     .id("\(media.id)-\(clearLogo)")
                                 } else {
                                     cardTitleText
@@ -151,9 +153,9 @@ struct MediaCard: View {
                                 }
                                 Spacer()
                             }
-                            .padding(.leading, config.width * 0.05)
-                            .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.08)
                         }
+                        .padding(.leading, config.width * 0.05)
+                        .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.06)
                     }
 
                     // Layer 4: Progress bar overlay (if enabled)
@@ -161,18 +163,19 @@ struct MediaCard: View {
                         VStack {
                             Spacer()
                             ZStack(alignment: .leading) {
-                                // Background capsule
+                                // Background capsule - full width
                                 Capsule()
-                                    .fill(.regularMaterial.opacity(0.4))
-                                    .frame(width: config.width, height: 5)
+                                    .fill(.white.opacity(0.3))
+                                    .frame(width: config.width - 24, height: 6)
 
-                                // Progress capsule
+                                // Progress capsule - proportional width
                                 Capsule()
                                     .fill(Color.beaconGradient)
-                                    .frame(width: config.width * media.progress, height: 5)
+                                    .frame(width: (config.width - 24) * media.progress, height: 6)
                                     .shadow(color: Color.beaconMagenta.opacity(0.6), radius: 4, x: 0, y: 0)
                             }
-                            .padding(.bottom, 8)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 12)
                         }
                     }
 
@@ -221,7 +224,7 @@ struct MediaCard: View {
                 }
             }
         }
-        .scaleEffect(isFocused ? 1.10 : 1.0)
+        .scaleEffect(isFocused ? CardRowLayout.focusScale : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
         .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
@@ -240,7 +243,7 @@ struct MediaCard: View {
             .font(.system(size: config.width * 0.053, weight: .bold, design: .default))
             .foregroundColor(.white)
             .lineLimit(2)
-            .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
+            .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
     }
 
     private var accessibilityLabel: String {

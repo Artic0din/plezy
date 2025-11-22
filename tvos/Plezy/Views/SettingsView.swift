@@ -25,7 +25,7 @@ struct SettingsView: View {
 
                     // Header
                     Text("Settings")
-                        .font(.system(size: 48, weight: .bold))
+                        .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.white, Color.beaconTextSecondary],
@@ -135,33 +135,14 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Appearance
-                    SettingsSection(title: "Appearance") {
-                        HStack {
-                            Image(systemName: "moon.fill")
-                                .font(.title2)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.beaconOrange, Color.beaconMagenta],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 40)
-
-                            Text("Theme")
-                                .font(.headline)
-                                .foregroundColor(.white)
-
-                            Spacer()
-
-                            Picker("Theme", selection: $settingsService.theme) {
-                                ForEach(SettingsService.ThemeMode.allCases, id: \.self) { theme in
-                                    Text(theme.displayName).tag(theme)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 400)
+                    // Storage
+                    SettingsSection(title: "Storage") {
+                        SettingsButton(
+                            icon: "trash",
+                            title: "Clear Image Cache",
+                            subtitle: "Free up storage space by clearing cached images"
+                        ) {
+                            ImageCacheService.shared.clearAll()
                         }
                     }
 
@@ -191,11 +172,10 @@ struct SettingsView: View {
                             Text("Sign Out")
                                 .font(.headline)
                         }
-                        .foregroundColor(.red)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
                     }
-                    .buttonStyle(CardButtonStyle())
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                     .padding(.top, 20)
                 }
                 .padding(.horizontal, 80)
@@ -294,6 +274,59 @@ struct SettingsToggle: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .tint(Color.beaconPurple)
+        }
+    }
+}
+
+struct SettingsButton: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+
+    @State private var showConfirmation = false
+
+    var body: some View {
+        Button {
+            showConfirmation = true
+        } label: {
+            HStack(spacing: 20) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.beaconOrange, Color.beaconMagenta],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.headline)
+                    .foregroundColor(.gray)
+            }
+        }
+        .buttonStyle(.plain)
+        .alert("Clear Cache", isPresented: $showConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) {
+                action()
+            }
+        } message: {
+            Text("This will remove all cached images. They will be downloaded again as needed.")
         }
     }
 }

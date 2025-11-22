@@ -54,6 +54,10 @@ struct HomeView: View {
         .onAppear {
             print("🏠 [HomeView] View appeared")
             startHeroTimer()
+            // Refresh Continue Watching on every appear to ensure up-to-date data
+            Task {
+                await refreshOnDeck()
+            }
         }
         .onDisappear {
             stopHeroTimer()
@@ -62,8 +66,8 @@ struct HomeView: View {
             print("🏠 [HomeView] .task modifier triggered")
             await loadContent()
         }
-        .sheet(item: $selectedMedia) { media in
-            let _ = print("📱 [HomeView] Sheet presenting MediaDetailView for: \(media.title)")
+        .fullScreenCover(item: $selectedMedia) { media in
+            let _ = print("📱 [HomeView] FullScreenCover presenting MediaDetailView for: \(media.title)")
             MediaDetailView(media: media)
                 .environmentObject(authService)
                 .onAppear {
@@ -85,6 +89,26 @@ struct HomeView: View {
             if newServer != nil {
                 Task {
                     await loadContent()
+                }
+            }
+        }
+        .onReceive(authService.$currentClient) { client in
+            // Load content when client becomes available (fixes initial load timing)
+            // Check if we have no content yet and client is now available
+            if client != nil && (noServerSelected || (onDeck.isEmpty && hubs.isEmpty && !isLoading)) {
+                print("🏠 [HomeView] Client became available, loading content...")
+                noServerSelected = false
+                Task {
+                    await loadContent()
+                }
+            }
+        }
+        .onChange(of: playingMedia) { oldValue, newValue in
+            // Refresh Continue Watching when returning from video playback
+            if oldValue != nil && newValue == nil {
+                print("🏠 [HomeView] Video player dismissed, refreshing Continue Watching...")
+                Task {
+                    await refreshOnDeck()
                 }
             }
         }
@@ -126,86 +150,26 @@ struct HomeView: View {
                                 .padding(.bottom, 20) // Gap from bottom of spacer to CW
                             }
                         }
-                        .frame(height: 680) // Fixed height - Continue Watching position locked
+                        .frame(height: 720) // Fixed height - Continue Watching position locked
 
-                        // Continue Watching section
+                        // Continue Watching section - exactly 4 cards visible
                         if !onDeck.isEmpty {
-                            VStack(alignment: .leading, spacing: 20) {
-                                Text("Continue Watching")
-                                    .font(.system(size: 40, weight: .bold, design: .default))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 90)
-                                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 30) {
-                                        ForEach(onDeck) { item in
-                                            MediaCard(
-                                                media: item,
-                                                config: .custom(
-                                                    width: 410,
-                                                    height: 231,
-                                                    showProgress: true,
-                                                    showLabel: .inside,
-                                                    showLogo: true,
-                                                    showEpisodeLabelBelow: true
-                                                )
-                                            ) {
-                                                print("🎯 [HomeView] Continue watching item tapped: \(item.title)")
-                                                playingMedia = item
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 90)
-                                }
-                                .tvOSScrollClipDisabled()
+                            ContinueWatchingRow(items: onDeck) { item in
+                                playingMedia = item
                             }
-                            .padding(.bottom, 60)
-                            .id("continueWatching")
-                            .focusSection()
                         }
 
-                    // Other hub rows
-                    ForEach(hubs.filter {
-                        let title = $0.title.lowercased()
-                        return !title.contains("recently added") &&
-                               !title.contains("on deck") &&
-                               !title.contains("continue watching")
-                    }) { hub in
-                        if let items = hub.metadata, !items.isEmpty {
-                            VStack(alignment: .leading, spacing: 20) {
-                                Text(hub.title)
-                                    .font(.system(size: 40, weight: .bold, design: .default))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 90)
-                                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 30) {
-                                        ForEach(items) { item in
-                                            MediaCard(
-                                                media: item,
-                                                config: .custom(
-                                                    width: 410,
-                                                    height: 231,
-                                                    showProgress: true,
-                                                    showLabel: .inside,
-                                                    showLogo: true,
-                                                    showEpisodeLabelBelow: true
-                                                )
-                                            ) {
-                                                print("🎯 [HomeView] Hub item tapped: \(item.title)")
-                                                selectedMedia = item
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 90)
-                                }
-                                .tvOSScrollClipDisabled()
+                        // Other hub rows - exactly 4 cards visible per row
+                        ForEach(hubs.filter {
+                            let title = $0.title.lowercased()
+                            return !title.contains("recently added") &&
+                                   !title.contains("on deck") &&
+                                   !title.contains("continue watching")
+                        }) { hub in
+                            HubRow(hub: hub) { item in
+                                selectedMedia = item
                             }
-                            .padding(.bottom, 60)
                         }
-                    }
 
                     // Bottom padding - add extra space to allow scrolling past Continue Watching
                     Color.clear.frame(height: 600)
@@ -284,10 +248,8 @@ struct HomeView: View {
                     Text("Select Server")
                 }
                 .font(.title2)
-                .padding(.horizontal, 60)
-                .padding(.vertical, 20)
             }
-            .buttonStyle(CardButtonStyle())
+            .buttonStyle(ClearGlassButtonStyle())
         }
     }
 
@@ -341,10 +303,9 @@ struct HomeView: View {
 
         let cacheKey = CacheService.homeKey(serverID: serverID)
 
-        // Check cache first
+        // Check cache for hubs only (not on-deck, which we always fetch fresh)
         if let cached: (onDeck: [PlexMetadata], hubs: [PlexHub]) = cache.get(cacheKey) {
-            print("🏠 [HomeView] Using cached content")
-            self.onDeck = cached.onDeck
+            print("🏠 [HomeView] Using cached hubs, fetching fresh on-deck...")
             self.hubs = cached.hubs
 
             // Extract recently added from hubs
@@ -355,6 +316,19 @@ struct HomeView: View {
 
             isLoading = false
             noServerSelected = false
+
+            // Always fetch fresh on-deck data
+            do {
+                let fetchedOnDeck = try await client.getOnDeck()
+                self.onDeck = fetchedOnDeck
+                // Update cache with fresh on-deck
+                cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: cached.hubs))
+                print("🏠 [HomeView] Fresh on-deck loaded: \(fetchedOnDeck.count) items")
+            } catch {
+                print("🔴 [HomeView] Error fetching fresh on-deck: \(error)")
+                // Fall back to cached on-deck
+                self.onDeck = cached.onDeck
+            }
             return
         }
 
@@ -409,6 +383,27 @@ struct HomeView: View {
 
         // Reload content
         await loadContent()
+    }
+
+    /// Lightweight refresh of just the Continue Watching row after video playback
+    private func refreshOnDeck() async {
+        guard let client = authService.currentClient,
+              let serverID = authService.selectedServer?.clientIdentifier else {
+            return
+        }
+
+        do {
+            let fetchedOnDeck = try await client.getOnDeck()
+            self.onDeck = fetchedOnDeck
+
+            // Update cache with new onDeck data
+            let cacheKey = CacheService.homeKey(serverID: serverID)
+            cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: self.hubs))
+
+            print("🔄 [HomeView] Continue Watching refreshed: \(fetchedOnDeck.count) items")
+        } catch {
+            print("🔴 [HomeView] Error refreshing Continue Watching: \(error)")
+        }
     }
 }
 
@@ -548,7 +543,7 @@ struct FullScreenHeroOverlay: View {
             }
 
         }
-        .padding(.horizontal, 90)
+        .padding(.horizontal, CardRowLayout.horizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -609,7 +604,7 @@ struct TopNavigationMenu: View {
 
             Spacer()
         }
-        .padding(.horizontal, 90)
+        .padding(.horizontal, CardRowLayout.horizontalPadding)
         .padding(.vertical, 20)
     }
 }
@@ -640,8 +635,7 @@ struct TopMenuItem: View {
                 }
             }
         }
-        .buttonStyle(PlainButtonStyle())
-        .focusable()
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .scaleEffect(isFocused ? 1.1 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
