@@ -527,15 +527,29 @@ extension PlexAPIClient {
 
     func checkPin(id: Int) async throws -> PlexPin {
         // First, get raw response to debug
-        let rawResponse: [String: Any] = try await requestRaw(path: "/api/v2/pins/\(id)")
+        let (rawResponse, rawString) = try await requestRawWithString(path: "/api/v2/pins/\(id)")
 
         // Debug: print all keys to see what Plex returns
         print("🔑 [PIN] Response keys: \(rawResponse.keys.sorted())")
 
+        // Print full raw response for debugging
+        if let authTokenValue = rawResponse["authToken"] {
+            print("🔑 [PIN] authToken raw value: \(authTokenValue) (type: \(type(of: authTokenValue)))")
+        } else {
+            print("🔑 [PIN] authToken key missing from response!")
+        }
+
         let pinId = rawResponse["id"] as? Int ?? 0
         let code = rawResponse["code"] as? String ?? ""
-        let authToken = rawResponse["authToken"] as? String
         let trusted = rawResponse["trusted"] as? Bool ?? false
+
+        // Handle authToken which might be NSNull from JSON
+        var authToken: String? = nil
+        if let tokenValue = rawResponse["authToken"] {
+            if let token = tokenValue as? String, !token.isEmpty {
+                authToken = token
+            }
+        }
 
         // Debug logging for PIN status
         let hasToken = authToken != nil && !authToken!.isEmpty
@@ -544,8 +558,8 @@ extension PlexAPIClient {
         return PlexPin(id: pinId, code: code, authToken: authToken)
     }
 
-    /// Raw request that returns dictionary for debugging
-    private func requestRaw(path: String) async throws -> [String: Any] {
+    /// Raw request that returns dictionary and raw string for debugging
+    private func requestRawWithString(path: String) async throws -> ([String: Any], String) {
         var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
 
         guard let url = urlComponents?.url else {
@@ -558,7 +572,14 @@ extension PlexAPIClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
+        // Debug: print the request headers
+        print("🔑 [PIN] Request URL: \(url)")
+        print("🔑 [PIN] Request headers - X-Plex-Client-Identifier: \(headers["X-Plex-Client-Identifier"] ?? "nil")")
+
         let (data, response) = try await session.data(for: request)
+
+        // Get raw string for debugging
+        let rawString = String(data: data, encoding: .utf8) ?? "unable to decode"
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
@@ -570,7 +591,7 @@ extension PlexAPIClient {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw PlexAPIError.decodingError(NSError(domain: "PlexAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Response is not a dictionary"]))
             }
-            return json
+            return (json, rawString)
         } catch let error as PlexAPIError {
             throw error
         } catch {
