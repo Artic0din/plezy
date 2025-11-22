@@ -226,7 +226,7 @@ struct MediaCard: View {
         }
         .scaleEffect(isFocused ? CardRowLayout.focusScale : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
-        .buttonStyle(.plain)
+        .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .onPlayPauseCommand {
             action()

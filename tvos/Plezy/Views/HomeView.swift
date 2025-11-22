@@ -54,6 +54,10 @@ struct HomeView: View {
         .onAppear {
             print("🏠 [HomeView] View appeared")
             startHeroTimer()
+            // Refresh Continue Watching on every appear to ensure up-to-date data
+            Task {
+                await refreshOnDeck()
+            }
         }
         .onDisappear {
             stopHeroTimer()
@@ -146,7 +150,7 @@ struct HomeView: View {
                                 .padding(.bottom, 20) // Gap from bottom of spacer to CW
                             }
                         }
-                        .frame(height: 680) // Fixed height - Continue Watching position locked
+                        .frame(height: 720) // Fixed height - Continue Watching position locked
 
                         // Continue Watching section - exactly 4 cards visible
                         if !onDeck.isEmpty {

@@ -147,7 +147,7 @@ struct ContinueWatchingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Continue Watching")
-                .font(.system(size: 40, weight: .bold, design: .default))
+                .font(.system(size: 32, weight: .bold, design: .default))
                 .foregroundColor(.white)
                 .padding(.horizontal, CardRowLayout.horizontalPadding)
                 .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
