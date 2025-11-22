@@ -25,7 +25,7 @@ struct SettingsView: View {
 
                     // Header
                     Text("Settings")
-                        .font(.system(size: 48, weight: .bold))
+                        .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.white, Color.beaconTextSecondary],

@@ -41,7 +41,7 @@ struct AuthView: View {
                         )
                         .shadow(color: Color.beaconPurple.opacity(0.5), radius: 20, x: 0, y: 10)
 
-                    Text("Plezy")
+                    Text("Beacon")
                         .font(.system(size: 60, weight: .bold))
                         .foregroundStyle(
                             LinearGradient(

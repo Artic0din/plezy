@@ -18,7 +18,7 @@ struct ServerSelectionView: View {
             VStack(spacing: 40) {
                 // Header
                 Text("Select Your Plex Server")
-                    .font(.system(size: 48, weight: .bold))
+                    .font(.system(size: 40, weight: .bold))
                     .foregroundColor(.white)
 
                 if authService.isLoading {

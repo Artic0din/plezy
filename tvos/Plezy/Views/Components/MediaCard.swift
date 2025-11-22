@@ -27,9 +27,10 @@ struct MediaCardConfig {
     }
 
     /// Predefined sizes for common use cases
+    /// Larger cards for a more immersive full-screen experience on tvOS
     static let continueWatching = MediaCardConfig(
-        width: 410,
-        height: 231,
+        width: 500,
+        height: 281,
         showProgress: true,
         showLabel: .inside,
         showLogo: true,
@@ -37,8 +38,8 @@ struct MediaCardConfig {
     )
 
     static let libraryGrid = MediaCardConfig(
-        width: 358,
-        height: 201,
+        width: 420,
+        height: 236,
         showProgress: true,
         showLabel: .inside,
         showLogo: true,

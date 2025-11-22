@@ -143,15 +143,14 @@ struct HomeView: View {
                                             MediaCard(
                                                 media: item,
                                                 config: .custom(
-                                                    width: 410,
-                                                    height: 231,
+                                                    width: 500,
+                                                    height: 281,
                                                     showProgress: true,
                                                     showLabel: .inside,
                                                     showLogo: true,
                                                     showEpisodeLabelBelow: true
                                                 )
                                             ) {
-                                                print("🎯 [HomeView] Continue watching item tapped: \(item.title)")
                                                 playingMedia = item
                                             }
                                         }
@@ -186,15 +185,14 @@ struct HomeView: View {
                                             MediaCard(
                                                 media: item,
                                                 config: .custom(
-                                                    width: 410,
-                                                    height: 231,
+                                                    width: 500,
+                                                    height: 281,
                                                     showProgress: true,
                                                     showLabel: .inside,
                                                     showLogo: true,
                                                     showEpisodeLabelBelow: true
                                                 )
                                             ) {
-                                                print("🎯 [HomeView] Hub item tapped: \(item.title)")
                                                 selectedMedia = item
                                             }
                                         }

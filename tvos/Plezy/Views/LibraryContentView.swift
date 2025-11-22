@@ -407,10 +407,10 @@ struct GridLayoutView: View {
     @EnvironmentObject var authService: PlexAuthService
     @State private var availableWidth: CGFloat = 1920
 
-    // Layout constants
-    private let columnsCount = 5
+    // Layout constants - larger cards for immersive experience
+    private let columnsCount = 4  // Fewer columns = larger cards
     private let spacing: CGFloat = 48
-    private let aspectRatio: CGFloat = 201.0 / 358.0 // Height / Width from .libraryGrid
+    private let aspectRatio: CGFloat = 236.0 / 420.0 // Height / Width (16:9)
 
     private var cardWidth: CGFloat {
         // Calculate card width: availableWidth - edge padding - internal spacing
