@@ -115,12 +115,14 @@ struct MediaCard: View {
                     }
                     .frame(width: config.width, height: config.height)
 
-                    // Layer 2: Gradient overlay for better text contrast
+                    // Layer 2: Gradient overlay for better text contrast on bright artwork
                     LinearGradient(
-                        gradient: Gradient(colors: [
-                            .clear,
-                            .clear,
-                            .black.opacity(config.showLabel == .inside || config.showProgress ? 0.75 : 0.4)
+                        gradient: Gradient(stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .clear, location: 0.35),
+                            .init(color: .black.opacity(0.3), location: 0.55),
+                            .init(color: .black.opacity(0.6), location: 0.75),
+                            .init(color: .black.opacity(config.showLabel == .inside || config.showProgress ? 0.85 : 0.5), location: 1.0)
                         ]),
                         startPoint: .top,
                         endPoint: .bottom
