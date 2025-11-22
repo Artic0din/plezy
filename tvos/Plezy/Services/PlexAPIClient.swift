@@ -528,38 +528,54 @@ class PlexAPIClient {
     ) async throws -> PlaybackDecision {
         // Generate a unique session ID for this playback
         let sessionID = UUID().uuidString
+        print("🎬 [Playback] Starting playback decision for partKey: \(partKey)")
 
         // Step 1: Try Direct Play first
-        let directPlayURL = buildDirectPlayURL(partKey: partKey)
-        if await canPlayDirectly(url: directPlayURL) {
-            print("✅ [Playback] Direct Play available")
-            return PlaybackDecision(url: directPlayURL, method: .directPlay, sessionID: sessionID)
+        if let directPlayURL = buildDirectPlayURL(partKey: partKey) {
+            print("🎬 [Playback] Checking Direct Play: \(directPlayURL)")
+            if await canPlayDirectly(url: directPlayURL) {
+                print("✅ [Playback] Direct Play available")
+                return PlaybackDecision(url: directPlayURL, method: .directPlay, sessionID: sessionID)
+            }
+            print("⚠️ [Playback] Direct Play check failed, trying Direct Stream...")
+        } else {
+            print("⚠️ [Playback] Could not build Direct Play URL")
         }
 
         // Step 2: Try Direct Stream (container remux without transcoding)
-        print("⚠️ [Playback] Direct Play failed, trying Direct Stream...")
         if let directStreamURL = buildDirectStreamURL(partKey: partKey, sessionID: sessionID) {
+            print("🎬 [Playback] Checking Direct Stream: \(directStreamURL)")
             if await canPlayDirectly(url: directStreamURL) {
                 print("✅ [Playback] Direct Stream available")
                 return PlaybackDecision(url: directStreamURL, method: .directStream, sessionID: sessionID)
             }
+            print("⚠️ [Playback] Direct Stream check failed")
+        } else {
+            print("⚠️ [Playback] Could not build Direct Stream URL")
         }
 
-        // Step 3: Fall back to Transcode
-        print("⚠️ [Playback] Direct Stream failed, falling back to Transcode...")
-        let transcodeURL = buildTranscodeURL(
+        // Step 3: Fall back to Transcode (always works)
+        print("🎬 [Playback] Falling back to Transcode...")
+        guard let transcodeURL = buildTranscodeURL(
             partKey: partKey,
             mediaKey: mediaKey,
             ratingKey: ratingKey,
             sessionID: sessionID,
             duration: duration
-        )
-        print("✅ [Playback] Using Transcode URL")
+        ) else {
+            // Last resort: return direct play URL even if HEAD check failed
+            if let directPlayURL = buildDirectPlayURL(partKey: partKey) {
+                print("⚠️ [Playback] Transcode URL failed, using Direct Play as fallback")
+                return PlaybackDecision(url: directPlayURL, method: .directPlay, sessionID: sessionID)
+            }
+            throw PlexAPIError.invalidURL
+        }
+        print("✅ [Playback] Using Transcode URL: \(transcodeURL)")
         return PlaybackDecision(url: transcodeURL, method: .transcode, sessionID: sessionID)
     }
 
     /// Build direct play URL (original file)
-    private func buildDirectPlayURL(partKey: String) -> URL {
+    private func buildDirectPlayURL(partKey: String) -> URL? {
         var urlString = baseURL.absoluteString + partKey
         if !urlString.contains("?") {
             urlString += "?"
@@ -569,7 +585,7 @@ class PlexAPIClient {
         if let token = accessToken {
             urlString += "X-Plex-Token=\(token)"
         }
-        return URL(string: urlString)!
+        return URL(string: urlString)
     }
 
     /// Build direct stream URL (remuxed container, no transcoding)
@@ -607,8 +623,10 @@ class PlexAPIClient {
         ratingKey: String,
         sessionID: String,
         duration: Int?
-    ) -> URL {
-        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+    ) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
         components.path = "/video/:/transcode/universal/start.m3u8"
 
         // Apple TV supports H.264/HEVC up to 4K, AAC/AC3/EAC3 audio
@@ -644,7 +662,7 @@ class PlexAPIClient {
         }
 
         components.queryItems = queryItems
-        return components.url!
+        return components.url
     }
 
     /// Check if a URL can be played directly (HEAD request to verify accessibility)
