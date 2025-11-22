@@ -174,27 +174,18 @@ struct SearchGridWidthPreferenceKey: PreferenceKey {
 }
 
 /// Categorized search results with section headings
+/// Uses CardRowLayout constants for consistency with home screen rows
 struct SearchResultsView: View {
     let results: [PlexMetadata]
     let onItemTapped: (PlexMetadata) -> Void
 
     @EnvironmentObject var authService: PlexAuthService
-    @State private var availableWidth: CGFloat = 1920
 
-    // Layout constants
-    private let columnsCount = 4
-    private let spacing: CGFloat = 48
-    private let aspectRatio: CGFloat = 236.0 / 420.0
-
-    private var cardWidth: CGFloat {
-        let totalHorizontalSpacing = (2 * spacing) + (CGFloat(columnsCount - 1) * spacing)
-        let availableForCards = availableWidth - totalHorizontalSpacing
-        return availableForCards / CGFloat(columnsCount)
-    }
-
-    private var cardHeight: CGFloat {
-        cardWidth * aspectRatio
-    }
+    // Use CardRowLayout constants for consistency across the app
+    private var cardWidth: CGFloat { CardRowLayout.cardWidth }
+    private var cardHeight: CGFloat { CardRowLayout.cardHeight }
+    private var spacing: CGFloat { CardRowLayout.cardSpacing }
+    private let columnsCount = Int(CardRowLayout.visibleCardCount)
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: columnsCount)
@@ -241,13 +232,11 @@ struct SearchResultsView: View {
                 .environmentObject(authService)
             }
         }
-        .onPreferenceChange(SearchGridWidthPreferenceKey.self) { width in
-            availableWidth = width
-        }
     }
 }
 
 /// Section with header and grid of items
+/// Uses CardRowLayout constants for consistency
 struct SearchSection: View {
     let title: String
     let icon: String
@@ -276,7 +265,7 @@ struct SearchSection: View {
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(.gray)
             }
-            .padding(.horizontal, spacing)
+            .padding(.horizontal, CardRowLayout.horizontalPadding)
 
             // Grid
             LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
@@ -296,7 +285,7 @@ struct SearchSection: View {
                     }
                 }
             }
-            .padding(.horizontal, spacing)
+            .padding(.horizontal, CardRowLayout.horizontalPadding)
         }
     }
 }

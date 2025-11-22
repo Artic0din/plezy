@@ -137,82 +137,24 @@ struct HomeView: View {
                         }
                         .frame(height: 680) // Fixed height - Continue Watching position locked
 
-                        // Continue Watching section
+                        // Continue Watching section - exactly 4 cards visible
                         if !onDeck.isEmpty {
-                            VStack(alignment: .leading, spacing: 20) {
-                                Text("Continue Watching")
-                                    .font(.system(size: 40, weight: .bold, design: .default))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 90)
-                                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 30) {
-                                        ForEach(onDeck) { item in
-                                            MediaCard(
-                                                media: item,
-                                                config: .custom(
-                                                    width: 500,
-                                                    height: 281,
-                                                    showProgress: true,
-                                                    showLabel: .inside,
-                                                    showLogo: true,
-                                                    showEpisodeLabelBelow: true
-                                                )
-                                            ) {
-                                                playingMedia = item
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 90)
-                                }
-                                .tvOSScrollClipDisabled()
+                            ContinueWatchingRow(items: onDeck) { item in
+                                playingMedia = item
                             }
-                            .padding(.bottom, 60)
-                            .id("continueWatching")
-                            .focusSection()
                         }
 
-                    // Other hub rows
-                    ForEach(hubs.filter {
-                        let title = $0.title.lowercased()
-                        return !title.contains("recently added") &&
-                               !title.contains("on deck") &&
-                               !title.contains("continue watching")
-                    }) { hub in
-                        if let items = hub.metadata, !items.isEmpty {
-                            VStack(alignment: .leading, spacing: 20) {
-                                Text(hub.title)
-                                    .font(.system(size: 40, weight: .bold, design: .default))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 90)
-                                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 30) {
-                                        ForEach(items) { item in
-                                            MediaCard(
-                                                media: item,
-                                                config: .custom(
-                                                    width: 500,
-                                                    height: 281,
-                                                    showProgress: true,
-                                                    showLabel: .inside,
-                                                    showLogo: true,
-                                                    showEpisodeLabelBelow: true
-                                                )
-                                            ) {
-                                                selectedMedia = item
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 90)
-                                }
-                                .tvOSScrollClipDisabled()
+                        // Other hub rows - exactly 4 cards visible per row
+                        ForEach(hubs.filter {
+                            let title = $0.title.lowercased()
+                            return !title.contains("recently added") &&
+                                   !title.contains("on deck") &&
+                                   !title.contains("continue watching")
+                        }) { hub in
+                            HubRow(hub: hub) { item in
+                                selectedMedia = item
                             }
-                            .padding(.bottom, 60)
                         }
-                    }
 
                     // Bottom padding - add extra space to allow scrolling past Continue Watching
                     Color.clear.frame(height: 600)
@@ -576,7 +518,7 @@ struct FullScreenHeroOverlay: View {
             }
 
         }
-        .padding(.horizontal, 90)
+        .padding(.horizontal, CardRowLayout.horizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -637,7 +579,7 @@ struct TopNavigationMenu: View {
 
             Spacer()
         }
-        .padding(.horizontal, 90)
+        .padding(.horizontal, CardRowLayout.horizontalPadding)
         .padding(.vertical, 20)
     }
 }

@@ -222,7 +222,7 @@ struct MediaCard: View {
                 }
             }
         }
-        .scaleEffect(isFocused ? 1.10 : 1.0)
+        .scaleEffect(isFocused ? CardRowLayout.focusScale : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
         .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
