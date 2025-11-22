@@ -151,7 +151,7 @@ struct PINDisplayView: View {
                     .font(.title2)
                     .foregroundColor(.white)
 
-                Text("Visit the URL below and enter this code:")
+                Text("Visit the URL below to link your Plex account:")
                     .font(.title3)
                     .foregroundColor(.gray)
             }
@@ -202,8 +202,8 @@ struct PINDisplayView: View {
             }
 
             // URL with enhanced beacon styling
-            VStack(spacing: 10) {
-                Text("plex.tv/link")
+            VStack(spacing: 15) {
+                Text("app.plex.tv/auth")
                     .font(.system(size: 36, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
                     .padding(.horizontal, 40)
@@ -240,6 +240,21 @@ struct PINDisplayView: View {
                             )
                     )
                     .shadow(color: Color.beaconOrange.opacity(0.4), radius: 15, x: 0, y: 5)
+
+                // Show full auth URL for easy copy
+                if let authURL = pin.authURL {
+                    Text("Or visit this URL on your device:")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.top, 10)
+
+                    Text(authURL)
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundColor(Color.beaconTextSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
             }
 
             // Waiting indicator with beacon colors

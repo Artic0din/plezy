@@ -34,7 +34,6 @@ class PlexAPIClient {
     private var headers: [String: String] {
         var headers = [
             "Accept": "application/json",
-            "Content-Type": "application/json",
             "X-Plex-Product": Self.plexProduct,
             "X-Plex-Version": Self.plexVersion,
             "X-Plex-Client-Identifier": Self.plexClientIdentifier,
@@ -521,8 +520,36 @@ extension PlexAPIClient {
             method: "POST"
         )
 
+        // Generate auth URL for app.plex.tv/auth (more reliable than plex.tv/link)
+        let authURL = generateAuthURL(code: response.code)
+
         print("🔑 [PIN] Created PIN: \(response.code) (ID: \(response.id))")
-        return PlexPin(id: response.id, code: response.code, authToken: nil)
+        print("🔑 [PIN] Auth URL: \(authURL)")
+        return PlexPin(id: response.id, code: response.code, authToken: nil, authURL: authURL)
+    }
+
+    /// Generate the Plex auth URL for a given PIN code
+    /// This URL can be opened on another device to authenticate
+    private func generateAuthURL(code: String) -> String {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "app.plex.tv"
+        components.path = "/auth"
+
+        // Parameters are passed in the fragment (after #?)
+        let params = [
+            "clientID": Self.plexClientIdentifier,
+            "code": code,
+            "context[device][product]": Self.plexProduct,
+            "context[device][platform]": Self.plexPlatform,
+            "context[device][device]": Self.plexDevice
+        ]
+
+        let queryString = params
+            .map { "\($0.key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }
+            .joined(separator: "&")
+
+        return "https://app.plex.tv/auth#?\(queryString)"
     }
 
     func checkPin(id: Int) async throws -> PlexPin {
