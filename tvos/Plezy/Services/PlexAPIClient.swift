@@ -568,6 +568,8 @@ extension PlexAPIClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        // CRITICAL: Bypass cache for PIN checks - we need fresh data from server
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
