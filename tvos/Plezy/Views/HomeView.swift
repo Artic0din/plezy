@@ -303,10 +303,9 @@ struct HomeView: View {
 
         let cacheKey = CacheService.homeKey(serverID: serverID)
 
-        // Check cache first
+        // Check cache for hubs only (not on-deck, which we always fetch fresh)
         if let cached: (onDeck: [PlexMetadata], hubs: [PlexHub]) = cache.get(cacheKey) {
-            print("🏠 [HomeView] Using cached content")
-            self.onDeck = cached.onDeck
+            print("🏠 [HomeView] Using cached hubs, fetching fresh on-deck...")
             self.hubs = cached.hubs
 
             // Extract recently added from hubs
@@ -317,6 +316,19 @@ struct HomeView: View {
 
             isLoading = false
             noServerSelected = false
+
+            // Always fetch fresh on-deck data
+            do {
+                let fetchedOnDeck = try await client.getOnDeck()
+                self.onDeck = fetchedOnDeck
+                // Update cache with fresh on-deck
+                cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: cached.hubs))
+                print("🏠 [HomeView] Fresh on-deck loaded: \(fetchedOnDeck.count) items")
+            } catch {
+                print("🔴 [HomeView] Error fetching fresh on-deck: \(error)")
+                // Fall back to cached on-deck
+                self.onDeck = cached.onDeck
+            }
             return
         }
 
