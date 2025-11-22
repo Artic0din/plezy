@@ -263,7 +263,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         #if os(tvOS)
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
-            shouldPresentContentProposal proposal: AVContentProposal
+            shouldPresent proposal: AVContentProposal
         ) -> Bool {
             // Allow presenting content proposal when we have a next episode
             let shouldPresent = playerManager.nextEpisode != nil
@@ -273,7 +273,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
 
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
-            didAcceptContentProposal proposal: AVContentProposal
+            didAccept proposal: AVContentProposal
         ) {
             print("📺 [ContentProposal] User accepted - playing next episode")
             if let nextEpisode = playerManager.nextEpisode {
@@ -285,7 +285,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
 
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
-            didRejectContentProposal proposal: AVContentProposal
+            didReject proposal: AVContentProposal
         ) {
             print("📺 [ContentProposal] User rejected - staying on current content")
             playerManager.cancelNextEpisode()
