@@ -40,6 +40,7 @@ struct MediaCardButtonStyle: ButtonStyle {
 /// Focus state is tracked for visual styling only - Apple handles focus behavior
 struct CardButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -47,23 +48,30 @@ struct CardButtonStyle: ButtonStyle {
             .padding(.vertical, DesignTokens.spacingXLarge) // Ensures minimum 44pt touch target
             .background(
                 ZStack {
-                    // Liquid Glass background
-                    RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
-                        .fill(.regularMaterial)
-                        .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : DesignTokens.materialOpacityButton))
+                    if reduceTransparency {
+                        // Solid color fallback for Reduce Transparency accessibility
+                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
+                            .fill(Color.beaconSurface)
+                            .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.85))
+                    } else {
+                        // Liquid Glass background
+                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
+                            .fill(.regularMaterial)
+                            .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : DesignTokens.materialOpacityButton))
 
-                    // Vibrancy layer
-                    RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(configuration.isPressed ? 0.12 : (isFocused ? 0.28 : 0.15)),
-                                    Color.white.opacity(configuration.isPressed ? 0.08 : (isFocused ? 0.20 : 0.10))
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                        // Vibrancy layer
+                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(configuration.isPressed ? 0.12 : (isFocused ? 0.28 : 0.15)),
+                                        Color.white.opacity(configuration.isPressed ? 0.08 : (isFocused ? 0.20 : 0.10))
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
+                    }
                 }
             )
             .overlay(
@@ -77,6 +85,7 @@ struct CardButtonStyle: ButtonStyle {
                         lineWidth: isFocused ? DesignTokens.borderWidthFocused : 0
                     )
             )
+            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous))
             .shadow(
                 color: DesignTokens.Shadow.cardFocused.color,
@@ -94,6 +103,7 @@ struct CardButtonStyle: ButtonStyle {
 /// Focus state is tracked for visual styling only - Apple handles focus behavior
 struct ClearGlassButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -101,23 +111,38 @@ struct ClearGlassButtonStyle: ButtonStyle {
             .padding(.vertical, DesignTokens.spacingXLarge) // Ensures minimum 44pt touch target
             .background(
                 ZStack {
-                    // Dark dimming layer for contrast over bright content
-                    Capsule()
-                        .fill(Color.black.opacity(DesignTokens.materialOpacityDimming))
-
-                    // Clear Liquid Glass material with vibrancy
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .opacity(configuration.isPressed ? 0.65 : (isFocused ? 1.0 : 0.88))
-
-                    // Beacon gradient fill when focused
-                    if isFocused {
+                    if reduceTransparency {
+                        // Solid color fallback for Reduce Transparency accessibility
                         Capsule()
-                            .fill(Color.beaconGradient)
-                            .opacity(0.4)
+                            .fill(Color.beaconSurface)
+                            .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.85))
+
+                        // Beacon gradient fill when focused
+                        if isFocused {
+                            Capsule()
+                                .fill(Color.beaconGradient)
+                                .opacity(0.5)
+                        }
+                    } else {
+                        // Dark dimming layer for contrast over bright content
+                        Capsule()
+                            .fill(Color.black.opacity(DesignTokens.materialOpacityDimming))
+
+                        // Clear Liquid Glass material with vibrancy
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .opacity(configuration.isPressed ? 0.65 : (isFocused ? 1.0 : 0.88))
+
+                        // Beacon gradient fill when focused
+                        if isFocused {
+                            Capsule()
+                                .fill(Color.beaconGradient)
+                                .opacity(0.4)
+                        }
                     }
                 }
             )
+            .clipShape(Capsule())
             .contentShape(Capsule())
             .shadow(
                 color: isFocused ? Color.beaconPurple.opacity(0.5) : DesignTokens.Shadow.buttonFocused.color,

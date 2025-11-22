@@ -148,8 +148,7 @@ struct MediaDetailView: View {
 
     private func artworkURL(for path: String?) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let path = path else { return nil }
         var urlString = baseURL.absoluteString + path
         if let token = server.accessToken {
@@ -593,8 +592,7 @@ struct MediaDetailContent: View {
 
     private func artworkURL(for path: String?) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let path = path else { return nil }
         var urlString = baseURL.absoluteString + path
         if let token = server.accessToken { urlString += "?X-Plex-Token=\(token)" }
@@ -779,8 +777,7 @@ struct EpisodeThumbnail: View {
 
     private var thumbnailURL: URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let thumb = episode.thumb else { return nil }
         var urlString = baseURL.absoluteString + thumb
         if let token = server.accessToken { urlString += "?X-Plex-Token=\(token)" }

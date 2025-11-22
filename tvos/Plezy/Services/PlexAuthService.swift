@@ -192,10 +192,13 @@ class PlexAuthService: ObservableObject {
             print("🟢 [PlexAuth] Working URL: \(workingURL)")
 
             print("🟢 [PlexAuth] Creating client with URL: \(workingURL)")
-            let client = PlexAPIClient(baseURL: workingURL, accessToken: server.accessToken ?? plexToken)
+            // Use server token if available, fall back to user's plex token
+            let effectiveToken = server.accessToken ?? plexToken
+            let client = PlexAPIClient(baseURL: workingURL, accessToken: effectiveToken)
             self.currentClient = client
-            self.selectedServer = server
-            print("🟢 [PlexAuth] Client and server set successfully")
+            // Store the server WITH the verified working URL for playback
+            self.selectedServer = server.withWorkingURL(workingURL)
+            print("🟢 [PlexAuth] Client and server set successfully (workingURL stored)")
 
             // Save selected server
             await StorageService().saveSelectedServer(server)

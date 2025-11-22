@@ -414,8 +414,7 @@ struct HomeView: View {
     /// Build art URL for hero image prefetching
     private func artURL(for media: PlexMetadata) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let art = media.art else {
             return nil
         }
@@ -500,8 +499,7 @@ struct FullScreenHeroBackground: View {
 
     private func artURL(for media: PlexMetadata) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let art = media.art else {
             return nil
         }
@@ -596,8 +594,7 @@ struct FullScreenHeroOverlay: View {
         }
 
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url else {
+              let baseURL = server.bestBaseURL else {
             return nil
         }
 

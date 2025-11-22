@@ -267,8 +267,7 @@ struct MediaCard: View {
 
     private var artURL: URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let art = media.art else {
             return nil
         }
@@ -283,8 +282,7 @@ struct MediaCard: View {
 
     private var logoURL: URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let clearLogo = media.clearLogo else {
             return nil
         }

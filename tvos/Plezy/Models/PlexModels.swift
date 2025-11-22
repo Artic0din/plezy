@@ -53,8 +53,8 @@ struct PlexServer: Codable, Identifiable, Equatable {
     let platformVersion: String
     let device: String
     let clientIdentifier: String
-    let createdAt: Date?
-    let lastSeenAt: Date?
+    let createdAt: Int?      // Unix timestamp (not ISO8601 Date)
+    let lastSeenAt: Int?     // Unix timestamp (not ISO8601 Date)
     let provides: String
     let ownerId: Int?
     let sourceTitle: String?
@@ -71,11 +71,25 @@ struct PlexServer: Codable, Identifiable, Equatable {
     let natLoopbackSupported: Bool?
     let connections: [PlexConnection]
 
+    // Store the verified working URL after connection testing
+    var workingURL: URL?
+
     var id: String { clientIdentifier }
 
     // Computed properties with default values
     var isOwned: Bool { owned ?? false }
     var isHome: Bool { home ?? false }
+
+    // Computed Date properties from Unix timestamps
+    var createdAtDate: Date? {
+        guard let timestamp = createdAt else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(timestamp))
+    }
+
+    var lastSeenAtDate: Date? {
+        guard let timestamp = lastSeenAt else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(timestamp))
+    }
 
     enum CodingKeys: String, CodingKey {
         case name, product, productVersion, platform, platformVersion
@@ -84,6 +98,129 @@ struct PlexServer: Codable, Identifiable, Equatable {
         case owned, home, synced, relay, presence, httpsRequired
         case publicAddressMatches, dnsRebindingProtection, natLoopbackSupported
         case connections
+        // workingURL is not encoded/decoded - it's set at runtime
+    }
+
+    // Custom initializer to support workingURL
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        product = try container.decode(String.self, forKey: .product)
+        productVersion = try container.decode(String.self, forKey: .productVersion)
+        platform = try container.decode(String.self, forKey: .platform)
+        platformVersion = try container.decode(String.self, forKey: .platformVersion)
+        device = try container.decode(String.self, forKey: .device)
+        clientIdentifier = try container.decode(String.self, forKey: .clientIdentifier)
+        createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt)
+        lastSeenAt = try container.decodeIfPresent(Int.self, forKey: .lastSeenAt)
+        provides = try container.decode(String.self, forKey: .provides)
+        ownerId = try container.decodeIfPresent(Int.self, forKey: .ownerId)
+        sourceTitle = try container.decodeIfPresent(String.self, forKey: .sourceTitle)
+        publicAddress = try container.decodeIfPresent(String.self, forKey: .publicAddress)
+        accessToken = try container.decodeIfPresent(String.self, forKey: .accessToken)
+        owned = try container.decodeIfPresent(Bool.self, forKey: .owned)
+        home = try container.decodeIfPresent(Bool.self, forKey: .home)
+        synced = try container.decodeIfPresent(Bool.self, forKey: .synced)
+        relay = try container.decodeIfPresent(Bool.self, forKey: .relay)
+        presence = try container.decodeIfPresent(Bool.self, forKey: .presence)
+        httpsRequired = try container.decodeIfPresent(Bool.self, forKey: .httpsRequired)
+        publicAddressMatches = try container.decodeIfPresent(Bool.self, forKey: .publicAddressMatches)
+        dnsRebindingProtection = try container.decodeIfPresent(Bool.self, forKey: .dnsRebindingProtection)
+        natLoopbackSupported = try container.decodeIfPresent(Bool.self, forKey: .natLoopbackSupported)
+        connections = try container.decode([PlexConnection].self, forKey: .connections)
+        workingURL = nil  // Set at runtime after connection testing
+    }
+
+    // Memberwise initializer for creating copies with workingURL
+    init(
+        name: String,
+        product: String,
+        productVersion: String,
+        platform: String,
+        platformVersion: String,
+        device: String,
+        clientIdentifier: String,
+        createdAt: Int?,
+        lastSeenAt: Int?,
+        provides: String,
+        ownerId: Int?,
+        sourceTitle: String?,
+        publicAddress: String?,
+        accessToken: String?,
+        owned: Bool?,
+        home: Bool?,
+        synced: Bool?,
+        relay: Bool?,
+        presence: Bool?,
+        httpsRequired: Bool?,
+        publicAddressMatches: Bool?,
+        dnsRebindingProtection: Bool?,
+        natLoopbackSupported: Bool?,
+        connections: [PlexConnection],
+        workingURL: URL? = nil
+    ) {
+        self.name = name
+        self.product = product
+        self.productVersion = productVersion
+        self.platform = platform
+        self.platformVersion = platformVersion
+        self.device = device
+        self.clientIdentifier = clientIdentifier
+        self.createdAt = createdAt
+        self.lastSeenAt = lastSeenAt
+        self.provides = provides
+        self.ownerId = ownerId
+        self.sourceTitle = sourceTitle
+        self.publicAddress = publicAddress
+        self.accessToken = accessToken
+        self.owned = owned
+        self.home = home
+        self.synced = synced
+        self.relay = relay
+        self.presence = presence
+        self.httpsRequired = httpsRequired
+        self.publicAddressMatches = publicAddressMatches
+        self.dnsRebindingProtection = dnsRebindingProtection
+        self.natLoopbackSupported = natLoopbackSupported
+        self.connections = connections
+        self.workingURL = workingURL
+    }
+
+    /// Create a copy of this server with a verified working URL
+    func withWorkingURL(_ url: URL) -> PlexServer {
+        PlexServer(
+            name: name,
+            product: product,
+            productVersion: productVersion,
+            platform: platform,
+            platformVersion: platformVersion,
+            device: device,
+            clientIdentifier: clientIdentifier,
+            createdAt: createdAt,
+            lastSeenAt: lastSeenAt,
+            provides: provides,
+            ownerId: ownerId,
+            sourceTitle: sourceTitle,
+            publicAddress: publicAddress,
+            accessToken: accessToken,
+            owned: owned,
+            home: home,
+            synced: synced,
+            relay: relay,
+            presence: presence,
+            httpsRequired: httpsRequired,
+            publicAddressMatches: publicAddressMatches,
+            dnsRebindingProtection: dnsRebindingProtection,
+            natLoopbackSupported: natLoopbackSupported,
+            connections: connections,
+            workingURL: url
+        )
+    }
+
+    /// Get the best available base URL for this server
+    /// Prefers workingURL (verified during connection), falls back to first connection
+    var bestBaseURL: URL? {
+        workingURL ?? connections.first?.url
     }
 }
 

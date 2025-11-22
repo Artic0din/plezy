@@ -748,8 +748,18 @@ class PlexAPIClient {
 // MARK: - Plex.tv API Client
 
 extension PlexAPIClient {
+    /// Safe URL for plex.tv - validated at compile time via static let
+    private static let plexTVBaseURL: URL = {
+        guard let url = URL(string: plexTVURL) else {
+            // This should never happen since plexTVURL is a constant valid URL
+            // Using fatalError here instead of force unwrap provides better crash diagnostics
+            fatalError("Invalid Plex.tv URL constant: \(plexTVURL)")
+        }
+        return url
+    }()
+
     static func createPlexTVClient(token: String? = nil) -> PlexAPIClient {
-        PlexAPIClient(baseURL: URL(string: plexTVURL)!, accessToken: token)
+        PlexAPIClient(baseURL: plexTVBaseURL, accessToken: token)
     }
 
     // MARK: - PIN Authentication
