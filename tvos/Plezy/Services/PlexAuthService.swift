@@ -246,10 +246,13 @@ class PlexAuthService: ObservableObject {
         // Results include priority index so we can pick the best successful one
         var results: [(index: Int, connection: PlexConnection, url: URL)] = []
 
+        // Capture token before entering task group (plexToken is @MainActor isolated)
+        let tokenForTesting = server.accessToken ?? plexToken
+
         await withTaskGroup(of: (Int, PlexConnection, URL?).self) { group in
             for (index, connection) in sortedConnections.enumerated() {
                 group.addTask {
-                    let workingURL = await self.testConnectionAndGetURL(connection, token: server.accessToken ?? self.plexToken)
+                    let workingURL = await self.testConnectionAndGetURL(connection, token: tokenForTesting)
                     return (index, connection, workingURL)
                 }
             }
