@@ -3,15 +3,16 @@
 //  Beacon tvOS
 //
 //  Full-screen hero detail view with:
-//  - Full-screen backdrop artwork (no card container)
-//  - Bottom-to-middle gradient for text readability
-//  - Left-aligned info panel in lower-left portion
-//  - Episode row at bottom for TV shows
+//  - Full-screen backdrop artwork (unblurred, not globally dimmed)
+//  - Bottom-to-middle gradient only for text readability
+//  - Reusable MediaDetailContent preserving original layout
+//  - Synopsis swaps based on episode focus
+//  - Single episodes row with all seasons
 //
 
 import SwiftUI
 
-// MARK: - Main View
+// MARK: - Main View (Full-screen wrapper)
 
 struct MediaDetailView: View {
     let media: PlexMetadata
@@ -33,16 +34,36 @@ struct MediaDetailView: View {
     // Playback
     @State private var playMedia: PlexMetadata?
 
+    // Content padding (same as original cardPadding)
+    private let contentPadding: CGFloat = 48
+
     var body: some View {
         ZStack {
-            // LAYER 1: Full-screen hero backdrop
+            // LAYER 1: Full-screen hero background (unblurred, not dimmed)
             heroBackdrop
 
-            // LAYER 2: Bottom-to-middle gradient overlay
+            // LAYER 2: Bottom-to-middle gradient ONLY
             gradientOverlay
 
-            // LAYER 3: Content layer - left-aligned info panel
-            contentLayer
+            // LAYER 3: Foreground detail content (reusing original layout)
+            VStack(spacing: 0) {
+                Spacer()
+
+                MediaDetailContent(
+                    media: displayMedia,
+                    seasons: seasons,
+                    allEpisodes: allEpisodes,
+                    selectedSeason: $selectedSeason,
+                    focusedEpisode: $focusedEpisode,
+                    onDeckEpisode: onDeckEpisode,
+                    trailers: trailers,
+                    onPlay: handlePlay,
+                    onPlayEpisode: { episode in playMedia = episode },
+                    contentPadding: contentPadding
+                )
+                .environmentObject(authService)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
@@ -52,6 +73,7 @@ struct MediaDetailView: View {
                 .environmentObject(authService)
         }
         .onChange(of: playMedia) { oldValue, newValue in
+            // Refresh episodes when returning from video playback
             if oldValue != nil && newValue == nil {
                 print("📺 [MediaDetailView] Video player dismissed, refreshing episodes...")
                 Task {
@@ -61,7 +83,7 @@ struct MediaDetailView: View {
         }
     }
 
-    // MARK: - Hero Backdrop (Full-screen, unblurred, not dimmed)
+    // MARK: - Hero Backdrop (Full-screen, unblurred, not globally dimmed)
 
     private var heroBackdrop: some View {
         Group {
@@ -81,62 +103,18 @@ struct MediaDetailView: View {
         .ignoresSafeArea()
     }
 
-    // MARK: - Gradient Overlay (Bottom-to-middle only)
+    // MARK: - Gradient Overlay (Bottom-to-middle only, no extra dimming)
 
     private var gradientOverlay: some View {
-        VStack(spacing: 0) {
-            // Top half: completely transparent
-            Color.clear
-                .frame(maxHeight: .infinity)
-
-            // Bottom half: gradient from transparent to dark
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    Color.black.opacity(0.4),
-                    Color.black.opacity(0.75),
-                    Color.black.opacity(0.92)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(maxHeight: .infinity)
-        }
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.black.opacity(0.0),
+                Color.black.opacity(0.8)
+            ]),
+            startPoint: .center,
+            endPoint: .bottom
+        )
         .ignoresSafeArea()
-    }
-
-    // MARK: - Content Layer (Left-aligned info panel)
-
-    private var contentLayer: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            // Main content: left-aligned info + spacer to push content left
-            HStack(alignment: .bottom, spacing: 0) {
-                // Left info panel
-                InfoPanel(
-                    media: displayMedia,
-                    focusedEpisode: focusedEpisode,
-                    onDeckEpisode: onDeckEpisode,
-                    trailers: trailers,
-                    onPlay: handlePlay
-                )
-                .environmentObject(authService)
-
-                Spacer()
-            }
-            .padding(.horizontal, 80)
-            .padding(.bottom, displayMedia.type == "show" && !seasons.isEmpty ? 20 : 80)
-
-            // TV Show: Season chips + Episodes row at the bottom
-            if displayMedia.type == "show" && !seasons.isEmpty {
-                VStack(spacing: 14) {
-                    seasonChipsRow
-                    episodesRow
-                }
-                .padding(.bottom, 40)
-            }
-        }
     }
 
     // MARK: - Computed Properties
@@ -155,34 +133,6 @@ struct MediaDetailView: View {
             urlString += "?X-Plex-Token=\(token)"
         }
         return URL(string: urlString)
-    }
-
-    // MARK: - Season/Episode Rows
-
-    private var seasonChipsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(seasons) { season in
-                    SeasonChip(
-                        season: season,
-                        isSelected: selectedSeason?.id == season.id,
-                        action: { selectedSeason = season }
-                    )
-                }
-            }
-            .padding(.horizontal, 80)
-        }
-    }
-
-    private var episodesRow: some View {
-        EpisodesRow(
-            episodes: allEpisodes,
-            selectedSeason: selectedSeason,
-            focusedEpisode: $focusedEpisode,
-            onPlay: { episode in playMedia = episode },
-            horizontalPadding: 80
-        )
-        .environmentObject(authService)
     }
 
     // MARK: - Actions
@@ -256,15 +206,20 @@ struct MediaDetailView: View {
         ImageCacheService.shared.prefetch(urls: urls)
     }
 
+    /// Lightweight refresh of episodes after video playback to update progress bars
     private func refreshEpisodes() async {
         guard let client = authService.currentClient,
               let ratingKey = media.ratingKey,
               media.type == "show" else { return }
 
         do {
+            // Refresh onDeck episode first (most likely to have changed)
             let onDeckItems = try await client.getOnDeck()
             onDeckEpisode = onDeckItems.first { $0.grandparentRatingKey == ratingKey }
+
+            // Refresh all episodes to update progress bars
             await loadAllEpisodes(client: client)
+
             print("📺 [MediaDetailView] Episodes refreshed, onDeck: \(onDeckEpisode?.title ?? "none")")
         } catch {
             print("🔴 [MediaDetailView] Error refreshing episodes: \(error)")
@@ -272,38 +227,59 @@ struct MediaDetailView: View {
     }
 }
 
-// MARK: - Info Panel (Left-aligned content)
+// MARK: - MediaDetailContent
+// Extracted inner layout from the original ShowDetailCard.
+// All fonts, padding, spacing, gradients, and view order are UNCHANGED.
+// Only the outer card wrapper (clipShape, background, fixed frame) was removed.
 
-struct InfoPanel: View {
+struct MediaDetailContent: View {
     let media: PlexMetadata
-    let focusedEpisode: PlexMetadata?
+    let seasons: [PlexMetadata]
+    let allEpisodes: [PlexMetadata]
+    @Binding var selectedSeason: PlexMetadata?
+    @Binding var focusedEpisode: PlexMetadata?
     let onDeckEpisode: PlexMetadata?
     let trailers: [PlexMetadata]
     let onPlay: () -> Void
+    let onPlayEpisode: (PlexMetadata) -> Void
+    let contentPadding: CGFloat
 
     @EnvironmentObject var authService: PlexAuthService
 
-    // Max width for the info panel (roughly left third of screen)
-    private let maxInfoWidth: CGFloat = 700
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Title / Logo
-            logoOrTitle
+        // ORIGINAL INNER LAYOUT - unchanged from ShowDetailCard
+        VStack(alignment: .leading, spacing: 0) {
+            // HERO BLOCK: Logo + Metadata + Synopsis + Technical Details + Buttons
+            // Positioned just above the season selector
+            VStack(alignment: .leading, spacing: 12) {
+                logoOrTitle
+                metadataRow          // Type | Genre
+                synopsisArea         // Description
+                technicalDetailsRow  // Rating, Year, Runtime, Resolution, Audio
+                actionButtons
+            }
+            .padding(.horizontal, contentPadding)
 
-            // Metadata row (type, rating, year, runtime, etc.)
-            metadataRow
+            // SEASON CHIPS + EPISODES ROW
+            if media.type == "show" && !seasons.isEmpty {
+                seasonChipsRow
+                    .padding(.top, 20)
+                    .padding(.horizontal, contentPadding)
 
-            // Synopsis (swaps on episode focus for TV shows)
-            synopsisArea
-
-            // Action buttons
-            actionButtons
+                episodesRow
+                    .padding(.top, 14)
+                    .padding(.bottom, contentPadding - 6)
+            } else {
+                Spacer().frame(height: contentPadding)
+            }
         }
-        .frame(maxWidth: maxInfoWidth, alignment: .leading)
+        // REMOVED: .frame(width: cardWidth, height: cardHeight)
+        // REMOVED: .background(ZStack { artwork + gradient })
+        // REMOVED: .clipShape(RoundedRectangle(...))
+        // REMOVED: .overlay(RoundedRectangle(...).strokeBorder(...))
     }
 
-    // MARK: - Logo / Title
+    // MARK: - Hero Components (ALL UNCHANGED)
 
     private var logoOrTitle: some View {
         Group {
@@ -315,7 +291,7 @@ struct InfoPanel: View {
                 } placeholder: {
                     titleText
                 }
-                .frame(maxWidth: 420, maxHeight: 120, alignment: .leading)
+                .frame(maxWidth: 400, maxHeight: 100, alignment: .leading)
             } else {
                 titleText
             }
@@ -324,84 +300,106 @@ struct InfoPanel: View {
 
     private var titleText: some View {
         Text(media.title)
-            .font(.system(size: 48, weight: .bold))
+            .font(.system(size: 40, weight: .bold))
             .foregroundColor(.white)
             .lineLimit(2)
-            .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
     }
 
-    // MARK: - Metadata Row
-
+    // Row 1: Type | Genre (UNCHANGED)
     private var metadataRow: some View {
-        HStack(spacing: 10) {
-            // Content type
+        HStack(spacing: 8) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
                 .foregroundColor(.white.opacity(0.9))
                 .fontWeight(.semibold)
 
-            // Genre
             if let genres = media.genre, let firstGenre = genres.first {
-                Text("·").foregroundColor(.white.opacity(0.5))
+                Text("·").foregroundColor(.white.opacity(0.4))
                 Text(firstGenre.tag)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.7))
             }
+        }
+        .font(.system(size: 18, weight: .medium))
+    }
 
+    // SYNOPSIS AREA - Fixed height, content swaps on episode focus (UNCHANGED)
+    private var synopsisArea: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let episode = focusedEpisode {
+                episodeSynopsis(episode: episode)
+            } else {
+                showSynopsis
+            }
+        }
+        .frame(height: 100, alignment: .topLeading)
+        .animation(.easeInOut(duration: 0.15), value: focusedEpisode?.id)
+    }
+
+    private var showSynopsis: some View {
+        Text(media.summary ?? "")
+            .font(.system(size: 18))
+            .foregroundColor(.white.opacity(0.75))
+            .lineLimit(4)
+            .frame(maxWidth: 800, alignment: .leading)
+    }
+
+    // Row 2: Technical details (Year, Runtime, Resolution, Audio) (UNCHANGED)
+    private var technicalDetailsRow: some View {
+        HStack(spacing: 8) {
             // Rating
             if let r = media.audienceRating {
-                Text("·").foregroundColor(.white.opacity(0.5))
                 Text("★ \(String(format: "%.1f", r))")
                     .foregroundColor(.yellow)
             }
 
             // Content Rating
             if let c = media.contentRating {
-                Text("·").foregroundColor(.white.opacity(0.5))
+                if media.audienceRating != nil { Text("·").foregroundColor(.white.opacity(0.4)) }
                 Text(c)
-                    .foregroundColor(.white.opacity(0.8))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
                     .background(Color.white.opacity(0.15))
                     .cornerRadius(4)
             }
 
             // Year
             if let y = media.year {
-                Text("·").foregroundColor(.white.opacity(0.5))
+                Text("·").foregroundColor(.white.opacity(0.4))
                 Text(String(y))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.7))
             }
 
             // Runtime
             if let d = media.duration {
-                Text("·").foregroundColor(.white.opacity(0.5))
+                Text("·").foregroundColor(.white.opacity(0.4))
                 Text(formatDuration(d))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.7))
             }
 
             // Resolution (movies only)
             if media.type == "movie", let resolution = mediaResolution {
-                Text("·").foregroundColor(.white.opacity(0.5))
+                Text("·").foregroundColor(.white.opacity(0.4))
                 Text(resolution)
-                    .foregroundColor(.white)
+                    .foregroundColor(.white.opacity(0.9))
                     .fontWeight(.semibold)
             }
 
             // Audio format (movies only)
             if media.type == "movie", let audio = mediaAudioFormat {
-                Text("·").foregroundColor(.white.opacity(0.5))
+                Text("·").foregroundColor(.white.opacity(0.4))
                 Text(audio)
-                    .foregroundColor(.white)
+                    .foregroundColor(.white.opacity(0.9))
                     .fontWeight(.semibold)
             }
         }
-        .font(.system(size: 18, weight: .medium))
-        .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
+        .font(.system(size: 16, weight: .medium))
     }
 
-    // Resolution from media info
+    // Get resolution from media info (UNCHANGED)
     private var mediaResolution: String? {
         guard let mediaInfo = media.media?.first,
               let resolution = mediaInfo.videoResolution else { return nil }
+
         switch resolution.lowercased() {
         case "4k", "2160": return "4K"
         case "1080": return "1080p"
@@ -411,12 +409,14 @@ struct InfoPanel: View {
         }
     }
 
-    // Audio format from media info
+    // Get audio format from media info (UNCHANGED)
     private var mediaAudioFormat: String? {
         guard let mediaInfo = media.media?.first,
               let codec = mediaInfo.audioCodec else { return nil }
+
         let channels = mediaInfo.audioChannels ?? 2
         let channelString = channels >= 6 ? " \(channels - 1).1" : ""
+
         switch codec.lowercased() {
         case "truehd": return "Dolby TrueHD\(channelString)"
         case "eac3": return "Dolby Digital+\(channelString)"
@@ -430,29 +430,6 @@ struct InfoPanel: View {
         }
     }
 
-    // MARK: - Synopsis Area
-
-    private var synopsisArea: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let episode = focusedEpisode {
-                episodeSynopsis(episode: episode)
-            } else {
-                showSynopsis
-            }
-        }
-        .frame(height: 110, alignment: .topLeading)
-        .animation(.easeInOut(duration: 0.15), value: focusedEpisode?.id)
-    }
-
-    private var showSynopsis: some View {
-        Text(media.summary ?? "")
-            .font(.system(size: 18))
-            .foregroundColor(.white.opacity(0.85))
-            .lineLimit(4)
-            .multilineTextAlignment(.leading)
-            .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
-    }
-
     private func episodeSynopsis(episode: PlexMetadata) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -462,72 +439,67 @@ struct InfoPanel: View {
                         .foregroundColor(Color.beaconPurple)
                 }
                 if let d = episode.duration {
-                    Text("·").foregroundColor(.white.opacity(0.5))
+                    Text("·").foregroundColor(.white.opacity(0.4))
                     Text(formatDuration(d))
                         .font(.system(size: 16))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(.white.opacity(0.6))
                 }
             }
 
             Text(episode.title)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.white)
                 .lineLimit(1)
 
             Text(episode.summary ?? "")
                 .font(.system(size: 16))
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(.white.opacity(0.7))
                 .lineLimit(2)
+                .frame(maxWidth: 800, alignment: .leading)
         }
-        .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
     }
 
-    // MARK: - Action Buttons
-
+    // ACTION BUTTONS (UNCHANGED)
     private var actionButtons: some View {
-        HStack(spacing: 16) {
-            // Play button
+        HStack(spacing: 14) {
             Button(action: onPlay) {
                 HStack(spacing: 8) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                     Text(playButtonLabel)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                 }
                 .foregroundColor(.white)
             }
             .buttonStyle(.clearGlass)
 
-            // Shuffle (TV shows only)
-            if media.type == "show" {
+            if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
                     Image(systemName: "shuffle.circle.fill")
-                        .font(.system(size: 28))
+                        .font(.system(size: 24))
                         .foregroundColor(.white)
                 }
                 .buttonStyle(CardButtonStyle())
             }
 
-            // Trailer (movies only)
             if media.type == "movie" && !trailers.isEmpty {
                 Button(action: {}) {
                     HStack(spacing: 6) {
                         Image(systemName: "film.stack.fill")
                         Text("Trailer")
                     }
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.white)
                 }
                 .buttonStyle(CardButtonStyle())
             }
 
-            // Watch/Unwatch (movies only)
+            // Watch/Unwatch button for movies
             if media.type == "movie" {
                 WatchStatusButton(media: media)
                     .environmentObject(authService)
             }
         }
-        .padding(.top, 8)
     }
 
     private var playButtonLabel: String {
@@ -539,16 +511,48 @@ struct InfoPanel: View {
         return media.progress > 0 ? "Resume" : "Play"
     }
 
-    // MARK: - Helpers
+    // SEASON CHIPS ROW (no label) (UNCHANGED)
+    private var seasonChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(seasons) { season in
+                    SeasonChip(
+                        season: season,
+                        isSelected: selectedSeason?.id == season.id,
+                        action: { selectedSeason = season }
+                    )
+                }
+            }
+        }
+    }
+
+    // EPISODES ROW (no label) (UNCHANGED)
+    private var episodesRow: some View {
+        EpisodesRow(
+            episodes: allEpisodes,
+            selectedSeason: selectedSeason,
+            focusedEpisode: $focusedEpisode,
+            onPlay: onPlayEpisode,
+            horizontalPadding: contentPadding
+        )
+        .environmentObject(authService)
+    }
+
+    // MARK: - Helpers (UNCHANGED)
+
+    private func artworkURL(for path: String?) -> URL? {
+        guard let server = authService.selectedServer,
+              let connection = server.connections.first,
+              let baseURL = connection.url,
+              let path = path else { return nil }
+        var urlString = baseURL.absoluteString + path
+        if let token = server.accessToken { urlString += "?X-Plex-Token=\(token)" }
+        return URL(string: urlString)
+    }
 
     private func logoURL(for logo: String) -> URL? {
         if logo.starts(with: "http") { return URL(string: logo) }
-        guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url else { return nil }
-        var urlString = baseURL.absoluteString + logo
-        if let token = server.accessToken { urlString += "?X-Plex-Token=\(token)" }
-        return URL(string: urlString)
+        return artworkURL(for: logo)
     }
 
     private func formatDuration(_ ms: Int) -> String {
@@ -558,7 +562,7 @@ struct InfoPanel: View {
     }
 }
 
-// MARK: - Season Chip
+// MARK: - Season Chip (UNCHANGED)
 
 struct SeasonChip: View {
     let season: PlexMetadata
@@ -569,17 +573,17 @@ struct SeasonChip: View {
     var body: some View {
         Button(action: action) {
             Text(season.title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(isSelected ? .white : .white.opacity(0.7))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(isSelected ? .white : .white.opacity(0.6))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
                 .background(
                     Capsule()
-                        .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(0.15))
+                        .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(0.1))
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(isFocused ? 0.6 : 0.2), lineWidth: 1)
+                        .strokeBorder(Color.white.opacity(isFocused ? 0.6 : 0.15), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -589,7 +593,7 @@ struct SeasonChip: View {
     }
 }
 
-// MARK: - Episodes Row
+// MARK: - Episodes Row (UNCHANGED)
 
 struct EpisodesRow: View {
     let episodes: [PlexMetadata]
@@ -621,7 +625,7 @@ struct EpisodesRow: View {
                     }
                 }
                 .padding(.horizontal, horizontalPadding)
-                .padding(.vertical, 20)
+                .padding(.vertical, 20) // Accommodate scale effect and shadow overflow
             }
             .onAppear {
                 if let first = episodes.first(where: { !$0.isWatched }) {
@@ -638,7 +642,8 @@ struct EpisodesRow: View {
     }
 }
 
-// MARK: - Episode Thumbnail
+// MARK: - Episode Thumbnail (UNCHANGED)
+// Matches MediaCard focus pattern: fixed size, single clipShape, scale+shadow only on focus
 
 struct EpisodeThumbnail: View {
     let episode: PlexMetadata
@@ -648,6 +653,7 @@ struct EpisodeThumbnail: View {
     @FocusState private var isFocused: Bool
     @EnvironmentObject var authService: PlexAuthService
 
+    // Fixed card dimensions - never changes with focus
     private let cardWidth: CGFloat = 280
     private let cardHeight: CGFloat = 158
     private let cornerRadius: CGFloat = DesignTokens.cornerRadiusMedium
@@ -655,8 +661,9 @@ struct EpisodeThumbnail: View {
     var body: some View {
         Button(action: onPlay) {
             VStack(alignment: .leading, spacing: 8) {
-                // Thumbnail card
+                // Thumbnail card (clipped)
                 ZStack {
+                    // Layer 1: Thumbnail image
                     CachedAsyncImage(url: thumbnailURL) { image in
                         image
                             .resizable()
@@ -669,7 +676,7 @@ struct EpisodeThumbnail: View {
                     .frame(width: cardWidth, height: cardHeight)
                     .clipped()
 
-                    // Progress bar
+                    // Layer 2: Progress bar (if applicable)
                     if episode.progress > 0 && episode.progress < 0.98 {
                         VStack {
                             Spacer()
@@ -680,7 +687,7 @@ struct EpisodeThumbnail: View {
                         }
                     }
 
-                    // Play overlay on focus
+                    // Layer 3: Play overlay on focus (styling only)
                     if isFocused {
                         Color.black.opacity(0.2)
                         Image(systemName: "play.circle.fill")
@@ -689,10 +696,12 @@ struct EpisodeThumbnail: View {
                             .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
                     }
                 }
+                // Fixed frame - NEVER changes with focus
                 .frame(width: cardWidth, height: cardHeight)
+                // Single clipShape on the card
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
 
-                // Episode label
+                // Episode label (below card, like Continue Watching)
                 VStack(alignment: .leading, spacing: 2) {
                     if let s = episode.parentIndex, let e = episode.index {
                         Text("S\(s) E\(e)")
@@ -707,6 +716,7 @@ struct EpisodeThumbnail: View {
                 .frame(width: cardWidth, alignment: .leading)
             }
         }
+        // Focus effects: scale + shadow only (reduced scale to avoid overlap)
         .scaleEffect(isFocused ? 1.05 : 1.0)
         .shadow(
             color: .black.opacity(isFocused ? 0.6 : 0.3),
@@ -715,6 +725,7 @@ struct EpisodeThumbnail: View {
             y: isFocused ? 10 : 4
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
+        // Use MediaCardButtonStyle to avoid system focus backgrounds
         .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
         .onChange(of: isFocused) { _, focused in
@@ -733,7 +744,7 @@ struct EpisodeThumbnail: View {
     }
 }
 
-// MARK: - Progress Bar
+// MARK: - Progress Bar (UNCHANGED)
 
 struct ProgressBar: View {
     let progress: Double
@@ -750,7 +761,7 @@ struct ProgressBar: View {
     }
 }
 
-// MARK: - Watch Status Button
+// MARK: - Watch Status Button (UNCHANGED)
 
 struct WatchStatusButton: View {
     let media: PlexMetadata
@@ -780,7 +791,7 @@ struct WatchStatusButton: View {
                 }
                 Text(isWatched ? "Unwatch" : "Watch")
             }
-            .font(.system(size: 18, weight: .medium))
+            .font(.system(size: 16, weight: .medium))
             .foregroundColor(.white)
         }
         .buttonStyle(CardButtonStyle())
