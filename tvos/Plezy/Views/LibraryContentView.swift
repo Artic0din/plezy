@@ -193,8 +193,8 @@ struct LibraryContentView: View {
                 await loadContent()
             }
         }
-        .sheet(item: $selectedMedia) { media in
-            let _ = print("📱 [LibraryContent] Sheet presenting MediaDetailView for: \(media.title)")
+        .fullScreenCover(item: $selectedMedia) { media in
+            let _ = print("📱 [LibraryContent] FullScreenCover presenting MediaDetailView for: \(media.title)")
             MediaDetailView(media: media)
                 .environmentObject(authService)
                 .onAppear {

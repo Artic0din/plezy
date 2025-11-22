@@ -62,8 +62,8 @@ struct HomeView: View {
             print("🏠 [HomeView] .task modifier triggered")
             await loadContent()
         }
-        .sheet(item: $selectedMedia) { media in
-            let _ = print("📱 [HomeView] Sheet presenting MediaDetailView for: \(media.title)")
+        .fullScreenCover(item: $selectedMedia) { media in
+            let _ = print("📱 [HomeView] FullScreenCover presenting MediaDetailView for: \(media.title)")
             MediaDetailView(media: media)
                 .environmentObject(authService)
                 .onAppear {

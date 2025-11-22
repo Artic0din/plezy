@@ -131,8 +131,9 @@ struct SearchView: View {
                 }
             }
         }
-        .sheet(item: $selectedMedia) { media in
+        .fullScreenCover(item: $selectedMedia) { media in
             MediaDetailView(media: media)
+                .environmentObject(authService)
         }
     }
 
