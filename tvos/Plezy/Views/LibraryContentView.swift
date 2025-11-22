@@ -339,11 +339,19 @@ struct FilterButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 20, weight: .semibold, design: .default))
+        if isSelected {
+            Button(action: action) {
+                Text(title)
+                    .font(.system(size: 20, weight: .semibold, design: .default))
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button(action: action) {
+                Text(title)
+                    .font(.system(size: 20, weight: .semibold, design: .default))
+            }
+            .buttonStyle(.bordered)
         }
-        .buttonStyle(isSelected ? .borderedProminent : .bordered)
     }
 }
 
