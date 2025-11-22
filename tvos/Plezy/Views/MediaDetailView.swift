@@ -2,9 +2,9 @@
 //  MediaDetailView.swift
 //  Beacon tvOS
 //
-//  A clean, unified TV show detail view with:
-//  - ONE fixed-size card (never resizes)
-//  - Logo/metadata always visible at top
+//  TV show detail view with:
+//  - ONE fixed-size card (no card behind card)
+//  - Card position NEVER moves when focus changes
 //  - Synopsis swaps based on episode focus
 //  - Single episodes row with all seasons
 //
@@ -34,23 +34,23 @@ struct MediaDetailView: View {
     @State private var playMedia: PlexMetadata?
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // CARD DIMENSIONS - Fixed size, never changes
+    // CARD DIMENSIONS - Fixed size, consistent across all shows
     // ═══════════════════════════════════════════════════════════════════════════
-    private let cardWidth: CGFloat = 1720      // Fixed width
-    private let cardHeight: CGFloat = 900      // Fixed height
-    private let cardCornerRadius: CGFloat = 24 // Consistent corner radius
-    private let cardPadding: CGFloat = 48      // Internal padding
+    private let cardWidth: CGFloat = 1720
+    private let cardHeight: CGFloat = 900
+    private let cardCornerRadius: CGFloat = 24
+    private let cardPadding: CGFloat = 48
 
     var body: some View {
+        // ═══════════════════════════════════════════════════════════════════════
+        // ROOT ZSTACK - Card is centered and NEVER moves vertically
+        // No ScrollView wrapper, no FocusSection that could auto-scroll
+        // ═══════════════════════════════════════════════════════════════════════
         ZStack {
-            // ═══════════════════════════════════════════════════════════════════
-            // LAYER 1: Full-screen background (dimmed artwork, NO blur)
-            // ═══════════════════════════════════════════════════════════════════
-            fullScreenBackground
+            // LAYER 1: Full-screen dimmed backdrop (NOT a card, just background)
+            dimmedBackdrop
 
-            // ═══════════════════════════════════════════════════════════════════
-            // LAYER 2: The ONE and ONLY card - fixed size, centered
-            // ═══════════════════════════════════════════════════════════════════
+            // LAYER 2: The ONE and ONLY card - fixed position, centered
             ShowDetailCard(
                 media: displayMedia,
                 seasons: seasons,
@@ -67,6 +67,8 @@ struct MediaDetailView: View {
                 cardPadding: cardPadding
             )
             .environmentObject(authService)
+            // Card is centered and position is LOCKED - never moves
+            .position(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2)
         }
         .ignoresSafeArea()
         .task { await loadDetails() }
@@ -77,9 +79,10 @@ struct MediaDetailView: View {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Full-screen background: Dimmed show artwork, NO blur
+    // DIMMED BACKDROP: Full-screen show artwork, dimmed (NOT a card)
+    // This is NOT a rounded card - just a flat full-screen background
     // ═══════════════════════════════════════════════════════════════════════════
-    private var fullScreenBackground: some View {
+    private var dimmedBackdrop: some View {
         ZStack {
             Color.black
 
@@ -91,7 +94,7 @@ struct MediaDetailView: View {
                 } placeholder: {
                     Color.black
                 }
-                .opacity(0.15) // Dimmed, NOT blurred
+                .opacity(0.15)
             }
         }
         .ignoresSafeArea()
@@ -150,7 +153,6 @@ struct MediaDetailView: View {
                 selectedSeason = seasons.first
                 onDeckEpisode = onDeckItems.first { $0.grandparentRatingKey == ratingKey }
 
-                // Load ALL episodes from ALL seasons concurrently
                 await loadAllEpisodes(client: client)
             }
 
@@ -183,20 +185,18 @@ struct MediaDetailView: View {
             allEpisodes = results.flatMap { $0.1 }
         }
 
-        // Prefetch thumbnails
         let urls = allEpisodes.compactMap { artworkURL(for: $0.thumb) }
         ImageCacheService.shared.prefetch(urls: urls)
     }
 }
 
-// MARK: - ShowDetailCard (The ONE card)
+// MARK: - ShowDetailCard
 // ═══════════════════════════════════════════════════════════════════════════════
-// This is the ONLY rounded card on screen. It has:
-// - Fixed dimensions (width, height, corner radius)
-// - Show artwork as background with gradient overlay
-// - Hero section at top (logo, metadata, synopsis, buttons)
-// - Season selector and episodes row at bottom
-// The card NEVER resizes when focus changes.
+// THE ONE AND ONLY CARD on screen.
+// - Fixed dimensions that NEVER change
+// - Artwork background with gradient (inside the card, not behind it)
+// - Layout: Hero block → Season chips → Episodes row
+// - No extra rounded containers, no card-behind-card
 // ═══════════════════════════════════════════════════════════════════════════════
 
 struct ShowDetailCard: View {
@@ -210,7 +210,6 @@ struct ShowDetailCard: View {
     let onPlay: () -> Void
     let onPlayEpisode: (PlexMetadata) -> Void
 
-    // Fixed dimensions - card never resizes
     let cardWidth: CGFloat
     let cardHeight: CGFloat
     let cardCornerRadius: CGFloat
@@ -219,35 +218,20 @@ struct ShowDetailCard: View {
     @EnvironmentObject var authService: PlexAuthService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // ═══════════════════════════════════════════════════════════════════
-            // TOP: Hero section (logo, metadata, synopsis, buttons)
-            // This section NEVER moves or disappears
-            // ═══════════════════════════════════════════════════════════════════
-            heroSection
-                .padding(.horizontal, cardPadding)
-                .padding(.top, cardPadding)
+        // ═══════════════════════════════════════════════════════════════════════
+        // SINGLE CARD STRUCTURE
+        // ZStack: artwork background + content overlay
+        // No nested cards, no extra RoundedRectangles
+        // ═══════════════════════════════════════════════════════════════════════
+        ZStack(alignment: .bottomLeading) {
+            // Card background: artwork + gradient overlay
+            artworkBackground
 
-            Spacer(minLength: 16)
-
-            // ═══════════════════════════════════════════════════════════════════
-            // BOTTOM: Season selector + Episodes row
-            // ═══════════════════════════════════════════════════════════════════
-            if media.type == "show" && !seasons.isEmpty {
-                Divider()
-                    .background(Color.white.opacity(0.2))
-                    .padding(.horizontal, cardPadding)
-
-                seasonAndEpisodesSection
-                    .padding(.top, 16)
-                    .padding(.bottom, cardPadding)
-            }
+            // Card content: hero + season chips + episodes
+            cardContent
         }
-        // ═══════════════════════════════════════════════════════════════════════
-        // FIXED SIZE - The card dimensions never change
-        // ═══════════════════════════════════════════════════════════════════════
+        // FIXED SIZE - dimensions never change regardless of content/focus
         .frame(width: cardWidth, height: cardHeight)
-        .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
@@ -256,9 +240,9 @@ struct ShowDetailCard: View {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Card background: Show artwork with gradient overlay (NO blur)
+    // ARTWORK BACKGROUND (inside the card, NOT a separate card behind)
     // ═══════════════════════════════════════════════════════════════════════════
-    private var cardBackground: some View {
+    private var artworkBackground: some View {
         ZStack {
             // Show artwork
             if let url = artworkURL(for: media.art) {
@@ -269,16 +253,18 @@ struct ShowDetailCard: View {
                 } placeholder: {
                     Color.black
                 }
+                .frame(width: cardWidth, height: cardHeight)
+                .clipped()
             } else {
                 Color.black
             }
 
-            // Gradient overlay for text readability (NOT blur)
+            // Gradient overlay for text readability
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.6),
-                    Color.black.opacity(0.75),
-                    Color.black.opacity(0.9)
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.7),
+                    Color.black.opacity(0.95)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -287,26 +273,48 @@ struct ShowDetailCard: View {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // HERO SECTION: Logo + Metadata + Synopsis + Buttons
-    // The logo and metadata row NEVER disappear - only synopsis content swaps
+    // CARD CONTENT LAYOUT
+    // Vertical order (top to bottom):
+    //   1. Logo/Title
+    //   2. Media details (type, rating, year, runtime)
+    //   3. Synopsis/description (swaps on episode focus)
+    //   4. Action buttons
+    //   5. Season selector chips (NO label)
+    //   6. Episodes row (NO label)
     // ═══════════════════════════════════════════════════════════════════════════
-    private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Row 1: Logo or Title (ALWAYS visible)
-            logoOrTitle
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer()
 
-            // Row 2: Metadata chips (ALWAYS visible)
-            metadataRow
+            // HERO BLOCK: grouped together, positioned just above season chips
+            VStack(alignment: .leading, spacing: 12) {
+                logoOrTitle
+                metadataRow
+                synopsisArea
+                actionButtons
+            }
+            .padding(.horizontal, cardPadding)
 
-            // Row 3: Synopsis area (content SWAPS based on focusedEpisode)
-            synopsisArea
+            // SEASON CHIPS (no label, directly under hero)
+            if media.type == "show" && !seasons.isEmpty {
+                seasonChipsRow
+                    .padding(.top, 20)
+                    .padding(.horizontal, cardPadding)
 
-            // Row 4: Action buttons (ALWAYS visible)
-            actionButtons
+                // EPISODES ROW (no label, directly under chips)
+                episodesRow
+                    .padding(.top, 14)
+                    .padding(.bottom, cardPadding - 6)
+            } else {
+                Spacer().frame(height: cardPadding)
+            }
         }
     }
 
-    // Logo or title - ALWAYS visible
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HERO COMPONENTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
     private var logoOrTitle: some View {
         Group {
             if let logo = media.clearLogo, let url = logoURL(for: logo) {
@@ -331,7 +339,6 @@ struct ShowDetailCard: View {
             .lineLimit(2)
     }
 
-    // Metadata row - ALWAYS visible
     private var metadataRow: some View {
         HStack(spacing: 8) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
@@ -355,26 +362,24 @@ struct ShowDetailCard: View {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // SYNOPSIS AREA: Content swaps based on focusedEpisode
-    // - If focusedEpisode != nil: Show episode details
-    // - Otherwise: Show series synopsis
+    // SYNOPSIS AREA
+    // - Shows series synopsis when no episode is focused
+    // - Shows episode info when an episode is focused
+    // - Fixed height to prevent layout shift
     // ═══════════════════════════════════════════════════════════════════════════
     private var synopsisArea: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if let episode = focusedEpisode {
-                // Episode is focused - show episode details
-                episodeSynopsisContent(episode: episode)
+                episodeSynopsis(episode: episode)
             } else {
-                // No episode focused - show series synopsis
-                showSynopsisContent
+                showSynopsis
             }
         }
-        .frame(height: 100, alignment: .topLeading) // Fixed height prevents layout shift
+        .frame(height: 100, alignment: .topLeading)
         .animation(.easeInOut(duration: 0.15), value: focusedEpisode?.id)
     }
 
-    // Show synopsis (when no episode focused)
-    private var showSynopsisContent: some View {
+    private var showSynopsis: some View {
         Text(media.summary ?? "")
             .font(.system(size: 18))
             .foregroundColor(.white.opacity(0.75))
@@ -382,10 +387,8 @@ struct ShowDetailCard: View {
             .frame(maxWidth: 800, alignment: .leading)
     }
 
-    // Episode synopsis (when episode is focused)
-    private func episodeSynopsisContent(episode: PlexMetadata) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Episode label + title
+    private func episodeSynopsis(episode: PlexMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 if let s = episode.parentIndex, let e = episode.index {
                     Text("S\(s), E\(e)")
@@ -413,7 +416,9 @@ struct ShowDetailCard: View {
         }
     }
 
-    // Action buttons - ALWAYS visible
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ACTION BUTTONS
+    // ═══════════════════════════════════════════════════════════════════════════
     private var actionButtons: some View {
         HStack(spacing: 14) {
             Button(action: onPlay) {
@@ -460,49 +465,36 @@ struct ShowDetailCard: View {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // SEASON & EPISODES SECTION
+    // SEASON CHIPS ROW (NO "Season" label)
     // ═══════════════════════════════════════════════════════════════════════════
-    private var seasonAndEpisodesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Season selector
-            HStack(spacing: 12) {
-                Text("Season")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(seasons) { season in
-                            SeasonChip(
-                                season: season,
-                                isSelected: selectedSeason?.id == season.id,
-                                action: { selectedSeason = season }
-                            )
-                        }
-                    }
+    private var seasonChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(seasons) { season in
+                    SeasonChip(
+                        season: season,
+                        isSelected: selectedSeason?.id == season.id,
+                        action: { selectedSeason = season }
+                    )
                 }
             }
-            .padding(.horizontal, cardPadding)
-
-            // Episodes row header
-            Text("Episodes")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.horizontal, cardPadding)
-
-            // ═══════════════════════════════════════════════════════════════════
-            // EPISODES ROW: All episodes from all seasons in one row
-            // Season selector scrolls to first episode of selected season
-            // ═══════════════════════════════════════════════════════════════════
-            EpisodesRow(
-                episodes: allEpisodes,
-                selectedSeason: selectedSeason,
-                focusedEpisode: $focusedEpisode,
-                onPlay: onPlayEpisode,
-                horizontalPadding: cardPadding
-            )
-            .environmentObject(authService)
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EPISODES ROW (NO "Episodes" label)
+    // All episodes from all seasons in one horizontal row
+    // Season chip selection scrolls to that season's first episode
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var episodesRow: some View {
+        EpisodesRow(
+            episodes: allEpisodes,
+            selectedSeason: selectedSeason,
+            focusedEpisode: $focusedEpisode,
+            onPlay: onPlayEpisode,
+            horizontalPadding: cardPadding
+        )
+        .environmentObject(authService)
     }
 
     // MARK: - Helpers
@@ -580,7 +572,6 @@ struct EpisodesRow: View {
                             episode: episode,
                             onPlay: { onPlay(episode) },
                             onFocusChange: { focused in
-                                // Update focusedEpisode for synopsis swap
                                 if focused {
                                     focusedEpisode = episode
                                 } else if focusedEpisode?.id == episode.id {
@@ -592,17 +583,15 @@ struct EpisodesRow: View {
                         .environmentObject(authService)
                     }
                 }
-                .padding(.horizontal, horizontalPadding) // Ensures no cutoff
-                .padding(.vertical, 6) // Space for scale effect
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, 6)
             }
             .onAppear {
-                // Scroll to first unwatched
                 if let first = episodes.first(where: { !$0.isWatched }) {
                     proxy.scrollTo(first.id, anchor: .leading)
                 }
             }
             .onChange(of: selectedSeason) { _, newSeason in
-                // Scroll to first episode of selected season
                 guard let season = newSeason else { return }
                 if let first = episodes.first(where: { $0.parentRatingKey == season.ratingKey }) {
                     withAnimation { proxy.scrollTo(first.id, anchor: .leading) }
@@ -622,14 +611,13 @@ struct EpisodeThumbnail: View {
     @FocusState private var isFocused: Bool
     @EnvironmentObject var authService: PlexAuthService
 
-    // Fixed thumbnail size
     private let thumbWidth: CGFloat = 280
     private let thumbHeight: CGFloat = 158
 
     var body: some View {
         Button(action: onPlay) {
             VStack(alignment: .leading, spacing: 6) {
-                // Thumbnail
+                // Thumbnail image
                 ZStack {
                     CachedAsyncImage(url: thumbnailURL) { image in
                         image
@@ -682,7 +670,6 @@ struct EpisodeThumbnail: View {
         }
         .buttonStyle(.plain)
         .focused($isFocused)
-        // Scale applied AFTER fixed frame - "breathes" into gap without changing layout
         .scaleEffect(isFocused ? 1.08 : 1.0)
         .shadow(
             color: isFocused ? Color.beaconPurple.opacity(0.4) : .clear,
