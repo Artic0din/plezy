@@ -19,6 +19,7 @@ struct MediaDetailView: View {
     @State private var isLoading = true
     @State private var playMedia: PlexMetadata?
     @State private var trailers: [PlexMetadata] = []
+    @State private var focusedEpisode: PlexMetadata?  // Track which episode is focused
 
     var body: some View {
         let _ = print("📄 [MediaDetailView] body evaluated for: \(media.title)")
@@ -71,8 +72,8 @@ struct MediaDetailView: View {
     /// One unified card containing show info, season selector, and episodes row
     private var showDetailCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Show info section
-            showInfoSection
+            // Show/Episode info section - swaps based on focusedEpisode
+            infoSection
                 .padding(.horizontal, 60)
                 .padding(.top, 60)
                 .padding(.bottom, 40)
@@ -111,9 +112,86 @@ struct MediaDetailView: View {
         .padding(.vertical, 60)
     }
 
-    // MARK: - Show Info Section
+    // MARK: - Info Section (Swaps between Show and Episode details)
 
-    private var showInfoSection: some View {
+    /// Shows episode details when an episode is focused, otherwise shows show details
+    private var infoSection: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // Title area - show logo/title or episode info
+            if let episode = focusedEpisode {
+                // Episode is focused - show episode details
+                episodeInfoView(episode: episode)
+            } else {
+                // No episode focused - show series info
+                showInfoView
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: focusedEpisode?.id)
+    }
+
+    /// Episode details view (shown when an episode is focused)
+    private func episodeInfoView(episode: PlexMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Episode label (S3, E1)
+            if let seasonNum = episode.parentIndex, let episodeNum = episode.index {
+                Text("S\(seasonNum), E\(episodeNum)")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(Color.beaconPurple)
+            }
+
+            // Episode title
+            Text(episode.title)
+                .font(.system(size: 44, weight: .heavy, design: .default))
+                .foregroundColor(.white)
+                .lineLimit(2)
+                .frame(maxWidth: 900, alignment: .leading)
+
+            // Episode metadata (runtime)
+            HStack(spacing: 12) {
+                if let duration = episode.duration {
+                    Text(formatDuration(duration))
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+
+                if episode.progress > 0 && episode.progress < 0.98 {
+                    Text("·")
+                        .foregroundColor(.white.opacity(0.5))
+                    Text("\(Int(episode.progress * 100))% watched")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+
+            // Episode synopsis
+            if let summary = episode.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundColor(.white.opacity(0.75))
+                    .lineLimit(4)
+                    .frame(maxWidth: 1000, alignment: .leading)
+            }
+
+            // Action buttons for episode
+            HStack(spacing: 20) {
+                Button {
+                    playMedia = episode
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                        Text(episode.progress > 0 ? "Resume" : "Play Episode")
+                            .font(.system(size: 22, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                }
+                .buttonStyle(.clearGlass)
+            }
+        }
+    }
+
+    /// Show/Series details view (shown when no episode is focused)
+    private var showInfoView: some View {
         VStack(alignment: .leading, spacing: 20) {
             // Clear logo or title
             if let clearLogo = displayMedia.clearLogo, let logoURL = logoURL(for: clearLogo) {
@@ -153,7 +231,7 @@ struct MediaDetailView: View {
             }
 
             // Summary
-            if let summary = summaryText, !summary.isEmpty {
+            if let summary = showSummaryText, !summary.isEmpty {
                 Text(summary)
                     .font(.system(size: 24, weight: .regular))
                     .foregroundColor(.white.opacity(0.75))
@@ -236,7 +314,7 @@ struct MediaDetailView: View {
                             isSelected: selectedSeason?.id == season.id
                         ) {
                             selectedSeason = season
-                            // Scroll to first episode of this season (handled in episodesRow)
+                            // Scroll handled by episodesRow onChange
                         }
                     }
                 }
@@ -258,9 +336,19 @@ struct MediaDetailView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 24) {
                         ForEach(allEpisodes) { episode in
-                            EpisodeCard(episode: episode) {
-                                playMedia = episode
-                            }
+                            EpisodeCard(
+                                episode: episode,
+                                action: {
+                                    playMedia = episode
+                                },
+                                onFocusChange: { focused in
+                                    if focused {
+                                        focusedEpisode = episode
+                                    } else if focusedEpisode?.id == episode.id {
+                                        focusedEpisode = nil
+                                    }
+                                }
+                            )
                             .id(episode.id)
                         }
                     }
@@ -307,11 +395,10 @@ struct MediaDetailView: View {
         detailedMedia ?? media
     }
 
-    private var summaryText: String? {
-        // For TV shows with on-deck episodes, show episode synopsis
-        if displayMedia.type == "show", let episode = onDeckEpisode {
-            return episode.summary ?? displayMedia.summary
-        }
+    /// Show-level summary (used when no episode is focused)
+    private var showSummaryText: String? {
+        // For TV shows with on-deck episodes, can show episode synopsis here if desired
+        // For now, always show show summary when at show level
         return displayMedia.summary
     }
 
@@ -591,11 +678,12 @@ struct SeasonButton: View {
     }
 }
 
-// MARK: - Episode Card (simplified, no overlay)
+// MARK: - Episode Card (with focus callback for synopsis swapping)
 
 struct EpisodeCard: View {
     let episode: PlexMetadata
     let action: () -> Void
+    let onFocusChange: (Bool) -> Void
     @FocusState private var isFocused: Bool
     @EnvironmentObject var authService: PlexAuthService
 
@@ -674,6 +762,9 @@ struct EpisodeCard: View {
         .scaleEffect(isFocused ? 1.08 : 1.0)
         .shadow(color: isFocused ? Color.beaconPurple.opacity(0.5) : .clear, radius: isFocused ? 15 : 0, x: 0, y: isFocused ? 8 : 0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
+        .onChange(of: isFocused) { _, focused in
+            onFocusChange(focused)
+        }
     }
 
     private var thumbnailURL: URL? {
