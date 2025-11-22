@@ -515,9 +515,9 @@ extension PlexAPIClient {
 
         // Use strong=true to match Flutter implementation and ensure proper token generation
         let response: PinResponse = try await request(
-            path: "/api/v2/pins?strong=true",
+            path: "/api/v2/pins",
             method: "POST",
-            body: nil
+            queryItems: [URLQueryItem(name: "strong", value: "true")]
         )
 
         print("🔑 [PIN] Created PIN: \(response.code) (ID: \(response.id))")
