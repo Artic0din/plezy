@@ -239,12 +239,13 @@ struct ShowDetailCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
 
-            // HERO BLOCK: Logo + Metadata + Synopsis + Buttons
+            // HERO BLOCK: Logo + Metadata + Synopsis + Technical Details + Buttons
             // Positioned just above the season selector
             VStack(alignment: .leading, spacing: 12) {
                 logoOrTitle
-                metadataRow
-                synopsisArea
+                metadataRow          // Type | Genre
+                synopsisArea         // Description
+                technicalDetailsRow  // Rating, Year, Runtime, Resolution, Audio
                 actionButtons
             }
             .padding(.horizontal, cardPadding)
@@ -328,26 +329,20 @@ struct ShowDetailCard: View {
             .lineLimit(2)
     }
 
+    // Row 1: Type | Genre
     private var metadataRow: some View {
         HStack(spacing: 8) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(.white.opacity(0.9))
+                .fontWeight(.semibold)
 
-            ForEach(metadataChips, id: \.self) { chip in
+            if let genres = media.genre, let firstGenre = genres.first {
                 Text("·").foregroundColor(.white.opacity(0.4))
-                Text(chip).foregroundColor(.white.opacity(0.7))
+                Text(firstGenre.tag)
+                    .foregroundColor(.white.opacity(0.7))
             }
         }
         .font(.system(size: 18, weight: .medium))
-    }
-
-    private var metadataChips: [String] {
-        var chips: [String] = []
-        if let r = media.audienceRating { chips.append("★ \(String(format: "%.1f", r))") }
-        if let c = media.contentRating { chips.append(c) }
-        if let y = media.year { chips.append(String(y)) }
-        if let d = media.duration { chips.append(formatDuration(d)) }
-        return chips
     }
 
     // SYNOPSIS AREA - Fixed height, content swaps on episode focus
@@ -369,6 +364,94 @@ struct ShowDetailCard: View {
             .foregroundColor(.white.opacity(0.75))
             .lineLimit(4)
             .frame(maxWidth: 800, alignment: .leading)
+    }
+
+    // Row 2: Technical details (Year, Runtime, Resolution, Audio)
+    private var technicalDetailsRow: some View {
+        HStack(spacing: 8) {
+            // Rating
+            if let r = media.audienceRating {
+                Text("★ \(String(format: "%.1f", r))")
+                    .foregroundColor(.yellow)
+            }
+
+            // Content Rating
+            if let c = media.contentRating {
+                if media.audienceRating != nil { Text("·").foregroundColor(.white.opacity(0.4)) }
+                Text(c)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.15))
+                    .cornerRadius(4)
+            }
+
+            // Year
+            if let y = media.year {
+                Text("·").foregroundColor(.white.opacity(0.4))
+                Text(String(y))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+
+            // Runtime
+            if let d = media.duration {
+                Text("·").foregroundColor(.white.opacity(0.4))
+                Text(formatDuration(d))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+
+            // Resolution (movies only)
+            if media.type == "movie", let resolution = mediaResolution {
+                Text("·").foregroundColor(.white.opacity(0.4))
+                Text(resolution)
+                    .foregroundColor(.white.opacity(0.9))
+                    .fontWeight(.semibold)
+            }
+
+            // Audio format (movies only)
+            if media.type == "movie", let audio = mediaAudioFormat {
+                Text("·").foregroundColor(.white.opacity(0.4))
+                Text(audio)
+                    .foregroundColor(.white.opacity(0.9))
+                    .fontWeight(.semibold)
+            }
+        }
+        .font(.system(size: 16, weight: .medium))
+    }
+
+    // Get resolution from media info
+    private var mediaResolution: String? {
+        guard let mediaInfo = media.media?.first,
+              let resolution = mediaInfo.videoResolution else { return nil }
+
+        switch resolution.lowercased() {
+        case "4k", "2160": return "4K"
+        case "1080": return "1080p"
+        case "720": return "720p"
+        case "480", "sd": return "SD"
+        default: return resolution.uppercased()
+        }
+    }
+
+    // Get audio format from media info
+    private var mediaAudioFormat: String? {
+        guard let mediaInfo = media.media?.first,
+              let codec = mediaInfo.audioCodec else { return nil }
+
+        let channels = mediaInfo.audioChannels ?? 2
+        let channelString = channels >= 6 ? " \(channels - 1).1" : ""
+
+        switch codec.lowercased() {
+        case "truehd": return "Dolby TrueHD\(channelString)"
+        case "eac3": return "Dolby Digital+\(channelString)"
+        case "ac3": return "Dolby Digital\(channelString)"
+        case "dts": return "DTS\(channelString)"
+        case "dca": return "DTS\(channelString)"
+        case "dts-hd", "dtshd": return "DTS-HD\(channelString)"
+        case "aac": return "AAC\(channelString)"
+        case "flac": return "FLAC"
+        default: return codec.uppercased()
+        }
     }
 
     private func episodeSynopsis(episode: PlexMetadata) -> some View {
