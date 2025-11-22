@@ -141,19 +141,19 @@ struct MediaCard: View {
                                         cardTitleText
                                     }
                                     .frame(
-                                        maxWidth: config.width * 0.5,
-                                        maxHeight: config.height * 0.25
+                                        maxWidth: config.width * 0.7,
+                                        maxHeight: config.height * 0.35
                                     )
-                                    .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
+                                    .shadow(color: .black.opacity(0.7), radius: 8, x: 0, y: 3)
                                     .id("\(media.id)-\(clearLogo)")
                                 } else {
                                     cardTitleText
-                                        .frame(maxWidth: config.width * 0.5, alignment: .leading)
+                                        .frame(maxWidth: config.width * 0.85, alignment: .leading)
                                 }
                                 Spacer()
                             }
-                            .padding(.leading, config.width * 0.05)
-                            .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.08)
+                            .padding(.leading, config.width * 0.04)
+                            .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.06)
                         }
                     }
 
@@ -242,10 +242,10 @@ struct MediaCard: View {
 
     private var cardTitleText: some View {
         Text(media.type == "episode" ? (media.grandparentTitle ?? media.title) : media.title)
-            .font(.system(size: config.width * 0.053, weight: .bold, design: .default))
+            .font(.system(size: config.width * 0.065, weight: .bold, design: .default))
             .foregroundColor(.white)
             .lineLimit(2)
-            .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
+            .shadow(color: .black.opacity(0.8), radius: 6, x: 0, y: 3)
     }
 
     private var accessibilityLabel: String {
