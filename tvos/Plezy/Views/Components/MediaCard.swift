@@ -130,9 +130,10 @@ struct MediaCard: View {
 
                     // Layer 3: Logo/Title overlay (if enabled and inside)
                     if config.showLogo && config.showLabel == .inside {
-                        VStack(alignment: .leading, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Spacer()
 
+                            // Logo or title
                             HStack {
                                 if let logoURL = logoURL, let clearLogo = media.clearLogo {
                                     CachedAsyncImage(url: logoURL) { image in
@@ -144,7 +145,7 @@ struct MediaCard: View {
                                     }
                                     .frame(
                                         maxWidth: config.width * 0.7,
-                                        maxHeight: config.height * 0.35
+                                        maxHeight: config.height * 0.30
                                     )
                                     .shadow(color: .black.opacity(0.7), radius: 8, x: 0, y: 3)
                                     .id("\(media.id)-\(clearLogo)")
@@ -154,9 +155,33 @@ struct MediaCard: View {
                                 }
                                 Spacer()
                             }
-                            .padding(.leading, config.width * 0.04)
-                            .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.06)
+
+                            // Metadata line: Type • Rating • Genre
+                            HStack(spacing: 6) {
+                                Text(media.type == "movie" ? "Movie" : "TV Show")
+                                    .font(.system(size: config.width * 0.038, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.85))
+
+                                if let contentRating = media.contentRating {
+                                    Text("•")
+                                        .foregroundColor(.white.opacity(0.6))
+                                    Text(cleanedContentRating(contentRating))
+                                        .font(.system(size: config.width * 0.038, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+
+                                if let genres = media.genre, let firstGenre = genres.first {
+                                    Text("•")
+                                        .foregroundColor(.white.opacity(0.6))
+                                    Text(firstGenre.tag)
+                                        .font(.system(size: config.width * 0.038, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+                            }
+                            .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
                         }
+                        .padding(.leading, config.width * 0.04)
+                        .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.06)
                     }
 
                     // Layer 4: Progress bar overlay (if enabled)
@@ -267,6 +292,11 @@ struct MediaCard: View {
             }
             return label
         }
+    }
+
+    /// Clean content rating by removing regional suffixes like "/au"
+    private func cleanedContentRating(_ rating: String) -> String {
+        rating.replacingOccurrences(of: "/au", with: "", options: .caseInsensitive)
     }
 
     private var artURL: URL? {
