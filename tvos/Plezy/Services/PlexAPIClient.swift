@@ -510,6 +510,7 @@ extension PlexAPIClient {
         struct PinResponse: Decodable {
             let id: Int
             let code: String
+            let qr: String?  // QR code image URL from Plex
         }
 
         // Use strong=false (default) for short 4-character PIN codes
@@ -525,7 +526,8 @@ extension PlexAPIClient {
 
         print("🔑 [PIN] Created PIN: \(response.code) (ID: \(response.id))")
         print("🔑 [PIN] Auth URL: \(authURL)")
-        return PlexPin(id: response.id, code: response.code, authToken: nil, authURL: authURL)
+        print("🔑 [PIN] QR URL: \(response.qr ?? "none")")
+        return PlexPin(id: response.id, code: response.code, authToken: nil, authURL: authURL, qrURL: response.qr)
     }
 
     /// Generate the Plex auth URL for a given PIN code

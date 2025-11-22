@@ -147,11 +147,11 @@ struct PINDisplayView: View {
     var body: some View {
         VStack(spacing: 40) {
             VStack(spacing: 20) {
-                Text("Sign in on your device")
+                Text("Sign in with Plex")
                     .font(.title2)
                     .foregroundColor(.white)
 
-                Text("Visit the URL below to link your Plex account:")
+                Text("Scan the QR code or enter the code below:")
                     .font(.title3)
                     .foregroundColor(.gray)
             }
@@ -201,59 +201,101 @@ struct PINDisplayView: View {
                 }
             }
 
-            // URL with enhanced beacon styling
-            VStack(spacing: 15) {
-                Text("app.plex.tv/auth")
-                    .font(.system(size: 36, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 40)
-                    .padding(.vertical, 15)
-                    .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
-                                .fill(.ultraThinMaterial)
-                                .opacity(0.4)
+            // QR Code and URL section
+            HStack(spacing: 60) {
+                // QR Code - scan with phone camera
+                if let qrURLString = pin.qrURL, let qrURL = URL(string: qrURLString) {
+                    VStack(spacing: 15) {
+                        Text("Scan with your phone")
+                            .font(.title3)
+                            .foregroundColor(.gray)
 
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.beaconOrange.opacity(0.1),
-                                            Color.beaconMagenta.opacity(0.08)
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
+                        AsyncImage(url: qrURL) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .interpolation(.none)  // Keep QR code crisp
+                                    .scaledToFit()
+                                    .frame(width: 200, height: 200)
+                                    .background(Color.white)
+                                    .cornerRadius(DesignTokens.cornerRadiusMedium)
+                            case .failure(_):
+                                // Fallback if QR fails to load
+                                RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(width: 200, height: 200)
+                                    .overlay(
+                                        Image(systemName: "qrcode")
+                                            .font(.system(size: 60))
+                                            .foregroundColor(.gray)
                                     )
-                                )
-                                .blendMode(.plusLighter)
+                            case .empty:
+                                ProgressView()
+                                    .frame(width: 200, height: 200)
+                            @unknown default:
+                                EmptyView()
+                            }
                         }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [Color.beaconOrange, Color.beaconMagenta],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                lineWidth: 3
-                            )
-                    )
-                    .shadow(color: Color.beaconOrange.opacity(0.4), radius: 15, x: 0, y: 5)
+                    }
+                }
 
-                // Show full auth URL for easy copy
-                if let authURL = pin.authURL {
-                    Text("Or visit this URL on your device:")
+                // Divider
+                VStack {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 1, height: 150)
+                    Text("OR")
                         .font(.subheadline)
                         .foregroundColor(.gray)
-                        .padding(.top, 10)
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 1, height: 150)
+                }
 
-                    Text(authURL)
-                        .font(.system(size: 14, design: .monospaced))
-                        .foregroundColor(Color.beaconTextSecondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
+                // Manual entry option
+                VStack(spacing: 15) {
+                    Text("Enter code at")
+                        .font(.title3)
+                        .foregroundColor(.gray)
+
+                    Text("plex.tv/link")
+                        .font(.system(size: 32, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 30)
+                        .padding(.vertical, 12)
+                        .background(
+                            ZStack {
+                                RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
+                                    .fill(.ultraThinMaterial)
+                                    .opacity(0.4)
+
+                                RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.beaconOrange.opacity(0.1),
+                                                Color.beaconMagenta.opacity(0.08)
+                                            ],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    )
+                                    .blendMode(.plusLighter)
+                            }
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [Color.beaconOrange, Color.beaconMagenta],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        )
+                        .shadow(color: Color.beaconOrange.opacity(0.3), radius: 10, x: 0, y: 5)
                 }
             }
 

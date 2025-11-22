@@ -14,19 +14,22 @@ struct PlexPin: Codable {
     let code: String
     let authToken: String?
     let authURL: String?  // URL for user to authenticate at app.plex.tv/auth
+    let qrURL: String?    // URL to QR code image from Plex
 
     enum CodingKeys: String, CodingKey {
         case id
         case code
         case authToken = "authToken"
         case authURL  // Not from API, generated locally
+        case qrURL    // Not from API, generated locally
     }
 
-    init(id: Int, code: String, authToken: String?, authURL: String? = nil) {
+    init(id: Int, code: String, authToken: String?, authURL: String? = nil, qrURL: String? = nil) {
         self.id = id
         self.code = code
         self.authToken = authToken
         self.authURL = authURL
+        self.qrURL = qrURL
     }
 }
 
