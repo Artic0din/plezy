@@ -27,7 +27,7 @@ struct HomeView: View {
     @State private var shouldShowHero = true
 
     private let heroDisplayDuration: TimeInterval = 7.0
-    private let heroTimerInterval: TimeInterval = 0.05
+    private let heroTimerInterval: TimeInterval = 0.1  // 100ms for efficiency (was 50ms)
 
     private let cache = CacheService.shared
 
@@ -312,6 +312,8 @@ struct HomeView: View {
             if let recentlyAddedHub = cached.hubs.first(where: { $0.title.lowercased().contains("recently added") || $0.title.lowercased().contains("recent") }),
                let items = recentlyAddedHub.metadata {
                 self.recentlyAdded = items
+                // Prefetch hero images for smoother transitions
+                prefetchHeroImages()
             }
 
             isLoading = false
@@ -353,6 +355,8 @@ struct HomeView: View {
                let items = recentlyAddedHub.metadata {
                 self.recentlyAdded = items
                 print("🏠 [HomeView] Recently Added items: \(items.count)")
+                // Prefetch hero images for smoother transitions
+                prefetchHeroImages()
             }
 
             // Cache the results
@@ -383,6 +387,45 @@ struct HomeView: View {
 
         // Reload content
         await loadContent()
+    }
+
+    /// Prefetch hero images for smoother transitions
+    private func prefetchHeroImages() {
+        guard !recentlyAdded.isEmpty else { return }
+
+        // Prefetch next 3 hero images (or all if fewer)
+        let count = min(recentlyAdded.count, 3)
+        var urls: [URL] = []
+
+        for i in 0..<count {
+            if let url = artURL(for: recentlyAdded[i]) {
+                urls.append(url)
+            }
+        }
+
+        if !urls.isEmpty {
+            #if DEBUG
+            print("🖼️ [HomeView] Prefetching \(urls.count) hero images")
+            #endif
+            ImageCacheService.shared.prefetch(urls: urls)
+        }
+    }
+
+    /// Build art URL for hero image prefetching
+    private func artURL(for media: PlexMetadata) -> URL? {
+        guard let server = authService.selectedServer,
+              let connection = server.connections.first,
+              let baseURL = connection.url,
+              let art = media.art else {
+            return nil
+        }
+
+        var urlString = baseURL.absoluteString + art
+        if let token = server.accessToken {
+            urlString += "?X-Plex-Token=\(token)"
+        }
+
+        return URL(string: urlString)
     }
 
     /// Lightweight refresh of just the Continue Watching row after video playback

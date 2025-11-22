@@ -81,6 +81,26 @@ struct MediaDetailView: View {
                 }
             }
         }
+        .onDisappear {
+            // Clear state on dismiss to free memory
+            clearState()
+        }
+    }
+
+    // MARK: - State Management
+
+    private func clearState() {
+        detailedMedia = nil
+        seasons = []
+        allEpisodes = []
+        selectedSeason = nil
+        onDeckEpisode = nil
+        trailers = []
+        focusedEpisode = nil
+        playMedia = nil
+        #if DEBUG
+        print("📺 [MediaDetailView] State cleared on dismiss")
+        #endif
     }
 
     // MARK: - Hero Backdrop (Full-screen, unblurred, not globally dimmed)
@@ -162,13 +182,18 @@ struct MediaDetailView: View {
         defer { isLoading = false }
 
         do {
+            // Check for cancellation before each major operation
+            guard !Task.isCancelled else { return }
             detailedMedia = try await client.getMetadata(ratingKey: ratingKey)
 
+            guard !Task.isCancelled else { return }
             if media.type == "show" {
                 async let seasonsTask = client.getChildren(ratingKey: ratingKey)
                 async let onDeckTask = client.getOnDeck()
 
                 let (loadedSeasons, onDeckItems) = try await (seasonsTask, onDeckTask)
+                guard !Task.isCancelled else { return }
+
                 seasons = loadedSeasons
                 selectedSeason = seasons.first
                 onDeckEpisode = onDeckItems.first { $0.grandparentRatingKey == ratingKey }
@@ -176,23 +201,31 @@ struct MediaDetailView: View {
                 await loadAllEpisodes(client: client)
             }
 
+            guard !Task.isCancelled else { return }
             if media.type == "movie" {
                 if let extras = try? await client.getExtras(ratingKey: ratingKey) {
+                    guard !Task.isCancelled else { return }
                     trailers = extras.filter {
                         $0.type == "clip" && $0.title.lowercased().contains("trailer")
                     }
                 }
             }
         } catch {
-            print("Error loading details: \(error)")
+            // Don't log cancellation errors
+            if !Task.isCancelled {
+                print("Error loading details: \(error)")
+            }
         }
     }
 
     private func loadAllEpisodes(client: PlexAPIClient) async {
+        guard !Task.isCancelled else { return }
+
         await withTaskGroup(of: (Int, [PlexMetadata]).self) { group in
             for (index, season) in seasons.enumerated() {
                 group.addTask {
-                    guard let key = season.ratingKey,
+                    guard !Task.isCancelled,
+                          let key = season.ratingKey,
                           let episodes = try? await client.getChildren(ratingKey: key)
                     else { return (index, []) }
                     return (index, episodes)
@@ -200,11 +233,15 @@ struct MediaDetailView: View {
             }
 
             var results: [(Int, [PlexMetadata])] = []
-            for await result in group { results.append(result) }
+            for await result in group {
+                guard !Task.isCancelled else { return }
+                results.append(result)
+            }
             results.sort { $0.0 < $1.0 }
             allEpisodes = results.flatMap { $0.1 }
         }
 
+        guard !Task.isCancelled else { return }
         let urls = allEpisodes.compactMap { artworkURL(for: $0.thumb) }
         ImageCacheService.shared.prefetch(urls: urls)
     }

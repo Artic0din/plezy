@@ -80,36 +80,48 @@ class PlexAuthService: ObservableObject {
     }
 
     func startPinPolling(pinId: Int, completion: @escaping (Bool) -> Void) {
+        #if DEBUG
         print("🔑 [PIN] Starting PIN polling for ID: \(pinId)")
+        #endif
         pinCheckTask?.cancel()
 
         pinCheckTask = Task {
+            // Exponential backoff: 1s, 2s, 5s, 10s, then 30s max
+            let backoffIntervals: [UInt64] = [1, 2, 5, 10, 30]
+            var attemptIndex = 0
+
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                    print("🔑 [PIN] Checking PIN status...")
+                    let interval = backoffIntervals[min(attemptIndex, backoffIntervals.count - 1)]
+                    try await Task.sleep(nanoseconds: interval * 1_000_000_000)
+
+                    #if DEBUG
+                    print("🔑 [PIN] Checking PIN status (attempt \(attemptIndex + 1), interval: \(interval)s)...")
+                    #endif
 
                     let client = PlexAPIClient.createPlexTVClient()
                     let pin = try await client.checkPin(id: pinId)
 
                     if let token = pin.authToken, !token.isEmpty {
+                        #if DEBUG
                         print("🔑 [PIN] ✅ PIN authenticated! Token received")
+                        #endif
 
                         // Load user info
                         let authedClient = PlexAPIClient.createPlexTVClient(token: token)
                         let user = try await authedClient.getUser()
+                        #if DEBUG
                         print("🔑 [PIN] User info loaded: \(user.username)")
+                        #endif
 
                         // Save token
                         await StorageService().savePlexToken(token)
-                        print("🔑 [PIN] Token saved to storage")
 
                         // Update @Published properties on the main actor
                         await MainActor.run {
                             self.plexToken = token
                             self.isAuthenticated = true
                             self.currentUser = user
-                            print("🔑 [PIN] Set isAuthenticated = true")
                         }
 
                         // Call completion handler on the main actor
@@ -118,10 +130,15 @@ class PlexAuthService: ObservableObject {
                         }
                         return
                     }
+
+                    attemptIndex += 1
                 } catch {
                     if !Task.isCancelled {
+                        #if DEBUG
                         print("🔴 [PIN] Pin polling error: \(error)")
+                        #endif
                     }
+                    attemptIndex += 1
                 }
             }
         }
@@ -215,19 +232,46 @@ class PlexAuthService: ObservableObject {
             return conn1.connectionType < conn2.connectionType
         }
 
+        #if DEBUG
         print("🟡 [findBestConnection] Sorted connections:")
         for (index, conn) in sortedConnections.enumerated() {
             print("  [\(index)] \(conn.protocol)://\(conn.address):\(conn.port) (local: \(conn.local), relay: \(conn.relay))")
         }
+        #endif
 
-        // Test each connection
-        for (index, connection) in sortedConnections.enumerated() {
-            print("🟡 [findBestConnection] Testing connection [\(index)]: \(connection.uri)")
-            if let workingURL = await testConnectionAndGetURL(connection, token: server.accessToken ?? plexToken) {
-                print("🟢 [findBestConnection] Connection [\(index)] succeeded!")
-                return (connection, workingURL)
+        // Test all connections in PARALLEL for faster server selection
+        // Results include priority index so we can pick the best successful one
+        var results: [(index: Int, connection: PlexConnection, url: URL)] = []
+
+        await withTaskGroup(of: (Int, PlexConnection, URL?).self) { group in
+            for (index, connection) in sortedConnections.enumerated() {
+                group.addTask {
+                    let workingURL = await self.testConnectionAndGetURL(connection, token: server.accessToken ?? self.plexToken)
+                    return (index, connection, workingURL)
+                }
             }
-            print("🔴 [findBestConnection] Connection [\(index)] failed")
+
+            // Collect all results
+            for await (index, connection, url) in group {
+                if let url = url {
+                    results.append((index: index, connection: connection, url: url))
+                    #if DEBUG
+                    print("🟢 [findBestConnection] Connection [\(index)] succeeded!")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("🔴 [findBestConnection] Connection [\(index)] failed")
+                    #endif
+                }
+            }
+        }
+
+        // Return the highest priority (lowest index) successful connection
+        if let best = results.min(by: { $0.index < $1.index }) {
+            #if DEBUG
+            print("🟢 [findBestConnection] Best connection: [\(best.index)] \(best.url)")
+            #endif
+            return (best.connection, best.url)
         }
 
         print("🔴 [findBestConnection] All connections failed")

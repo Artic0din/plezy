@@ -29,10 +29,10 @@ class ImageCacheService {
     // Optimized URLSession for image downloads
     private let imageSession: URLSession
 
-    // MEMORY LIMITS - Optimized for tvOS (limited RAM)
-    // tvOS devices have 2-3GB RAM, but OS and apps share it
-    private let memoryCacheCountLimit = 50   // Max 50 images in memory
-    private let memoryCacheTotalCostLimit = 40 * 1024 * 1024  // 40 MB max memory
+    // MEMORY LIMITS - Tuned for tvOS (2-3GB RAM available)
+    // More generous limits to reduce cache thrashing and re-downloads
+    private let memoryCacheCountLimit = 150   // Max 150 images in memory
+    private let memoryCacheTotalCostLimit = 150 * 1024 * 1024  // 150 MB max memory
     private let diskCacheSizeLimit = 300 * 1024 * 1024  // 300 MB max disk
 
     // Maximum image dimensions for downsampling

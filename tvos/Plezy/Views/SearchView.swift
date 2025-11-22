@@ -14,6 +14,9 @@ struct SearchView: View {
     @State private var searchResults: [PlexMetadata] = []
     @State private var isSearching = false
     @State private var selectedMedia: PlexMetadata?
+    @State private var searchTask: Task<Void, Never>?
+
+    private let cache = CacheService.shared
 
     var body: some View {
         ZStack {
@@ -70,7 +73,9 @@ struct SearchView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 80)
                     .onChange(of: searchQuery) { _, newValue in
-                        Task {
+                        // Cancel previous search task
+                        searchTask?.cancel()
+                        searchTask = Task {
                             await performSearch(query: newValue)
                         }
                     }
@@ -138,24 +143,44 @@ struct SearchView: View {
     }
 
     private func performSearch(query: String) async {
-        guard !query.isEmpty, let client = authService.currentClient else {
+        guard !query.isEmpty, let client = authService.currentClient,
+              let serverID = authService.selectedServer?.clientIdentifier else {
             searchResults = []
             return
         }
 
         // Debounce search
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        do {
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        } catch {
+            // Task was cancelled
+            return
+        }
 
-        // Check if query has changed
-        guard query == searchQuery else { return }
+        // Check if task was cancelled or query changed
+        guard !Task.isCancelled, query == searchQuery else { return }
+
+        // Check cache first
+        let cacheKey = "search_\(serverID)_\(query.lowercased())"
+        if let cached: [PlexMetadata] = cache.get(cacheKey) {
+            searchResults = cached
+            return
+        }
 
         isSearching = true
 
         do {
             let results = try await client.search(query: query)
+            // Only update if task wasn't cancelled
+            guard !Task.isCancelled else { return }
             searchResults = results
+            // Cache results for 1 hour
+            cache.set(cacheKey, value: results, ttl: 3600)
         } catch {
+            guard !Task.isCancelled else { return }
+            #if DEBUG
             print("Search error: \(error)")
+            #endif
             searchResults = []
         }
 

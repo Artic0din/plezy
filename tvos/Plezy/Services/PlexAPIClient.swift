@@ -8,10 +8,30 @@
 import Foundation
 import Combine
 
+/// Cache entry wrapper for metadata with timestamp
+private class MetadataCacheEntry {
+    let metadata: PlexMetadata
+    let timestamp: Date
+
+    init(metadata: PlexMetadata, timestamp: Date = Date()) {
+        self.metadata = metadata
+        self.timestamp = timestamp
+    }
+
+    func isValid(ttl: TimeInterval) -> Bool {
+        return Date().timeIntervalSince(timestamp) < ttl
+    }
+}
+
 class PlexAPIClient {
     let baseURL: URL
     let accessToken: String?
     private let session: URLSession
+
+    // In-memory metadata cache to reduce redundant network calls
+    // Shared across all instances for efficiency
+    private static let metadataCache = NSCache<NSString, MetadataCacheEntry>()
+    private static let metadataCacheTTL: TimeInterval = 300  // 5 minutes
 
     // Plex.tv API constants
     static let plexTVURL = "https://plex.tv"
@@ -234,6 +254,15 @@ class PlexAPIClient {
     }
 
     func getMetadata(ratingKey: String) async throws -> PlexMetadata {
+        // Check cache first
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        if let entry = Self.metadataCache.object(forKey: cacheKey), entry.isValid(ttl: Self.metadataCacheTTL) {
+            #if DEBUG
+            print("📡 [API] getMetadata cache HIT for ratingKey: \(ratingKey)")
+            #endif
+            return entry.metadata
+        }
+
         // Include all necessary data for playback
         // Based on official Plex API docs: https://plexapi.dev/api-reference/library/get-metadata-by-ratingkey
         let queryItems = [
@@ -241,17 +270,28 @@ class PlexAPIClient {
             URLQueryItem(name: "includeExtras", value: "0"),
             URLQueryItem(name: "includeImages", value: "1")
         ]
+        #if DEBUG
         print("📡 [API] getMetadata for ratingKey: \(ratingKey)")
+        #endif
         let response: PlexResponse<PlexMetadata> = try await request(
             path: "/library/metadata/\(ratingKey)",
             queryItems: queryItems
         )
+        #if DEBUG
         print("📡 [API] Metadata response - items count: \(response.MediaContainer.items.count)")
+        #endif
         guard let metadata = response.MediaContainer.items.first else {
             throw PlexAPIError.noData
         }
+        #if DEBUG
         print("📡 [API] First metadata item - type: \(metadata.type ?? "unknown"), title: \(metadata.title)")
         print("📡 [API] Metadata has media array: \(metadata.media != nil), count: \(metadata.media?.count ?? 0)")
+        #endif
+
+        // Cache the result
+        let entry = MetadataCacheEntry(metadata: metadata)
+        Self.metadataCache.setObject(entry, forKey: cacheKey)
+
         return metadata
     }
 
