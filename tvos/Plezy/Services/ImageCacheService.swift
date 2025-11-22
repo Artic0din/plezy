@@ -87,8 +87,8 @@ class ImageCacheService {
             return cachedImage
         }
 
-        // Check disk cache
-        if let diskImage = loadFromDisk(url: url) {
+        // Check disk cache on background queue to avoid blocking main thread
+        if let diskImage = await loadFromDiskAsync(url: url) {
             // Store in memory for faster access next time with proper cost
             let memoryCost = Int(diskImage.size.width * diskImage.size.height * 4)
             memoryCache.setObject(diskImage, forKey: cacheKey, cost: memoryCost)
@@ -229,7 +229,17 @@ class ImageCacheService {
         return UIImage(cgImage: downsampledImage)
     }
 
-    /// Load image from disk cache
+    /// Load image from disk cache (async version - offloads to background queue)
+    private func loadFromDiskAsync(url: URL) async -> UIImage? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let image = self.loadFromDisk(url: url)
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
+    /// Load image from disk cache (synchronous - call from background only)
     private func loadFromDisk(url: URL) -> UIImage? {
         let fileURL = diskCacheURL(for: url)
 

@@ -105,11 +105,15 @@ class PlexAPIClient {
         for attempt in 0..<retries {
             if attempt > 0 {
                 let delay = min(pow(2.0, Double(attempt)), 16.0) // Cap at 16 seconds
+                #if DEBUG
                 print("🔄 [API] Retry attempt \(attempt + 1)/\(retries) after \(delay)s delay")
+                #endif
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
 
+            #if DEBUG
             print("🌐 [API] \(method) \(url) (attempt \(attempt + 1)/\(retries))")
+            #endif
 
             var request = URLRequest(url: url)
             request.httpMethod = method
@@ -126,25 +130,22 @@ class PlexAPIClient {
                     throw PlexAPIError.invalidResponse
                 }
 
+                #if DEBUG
                 print("🌐 [API] Response: \(httpResponse.statusCode) - \(data.count) bytes")
+                #endif
 
                 guard (200...299).contains(httpResponse.statusCode) else {
                     // Provide specific error messages for common HTTP status codes
                     switch httpResponse.statusCode {
                     case 401:
-                        print("❌ [API] Unauthorized - invalid or expired token")
                         throw PlexAPIError.unauthorized
                     case 404:
-                        print("❌ [API] Not found - resource doesn't exist")
                         throw PlexAPIError.notFound
                     case 429:
-                        print("❌ [API] Rate limited - too many requests")
                         throw PlexAPIError.rateLimited
                     case 500...599:
-                        print("❌ [API] Server error (\(httpResponse.statusCode))")
                         throw PlexAPIError.serverError(statusCode: httpResponse.statusCode)
                     default:
-                        print("❌ [API] HTTP error \(httpResponse.statusCode)")
                         throw PlexAPIError.httpError(statusCode: httpResponse.statusCode)
                     }
                 }
@@ -154,40 +155,39 @@ class PlexAPIClient {
                 decoder.keyDecodingStrategy = .useDefaultKeys
 
                 do {
-                    // Debug: Print first 500 characters of response for inspection
+                    #if DEBUG
+                    // Debug: Print first 200 characters of response for inspection
                     if let jsonString = String(data: data, encoding: .utf8) {
-                        let preview = String(jsonString.prefix(500))
-                        print("🔍 [API] Response preview: \(preview)")
+                        let preview = String(jsonString.prefix(200))
+                        print("🔍 [API] Response preview: \(preview)...")
                     }
+                    #endif
                     let result = try decoder.decode(T.self, from: data)
-                    print("✅ [API] Request successful on attempt \(attempt + 1)")
                     return result
                 } catch {
+                    #if DEBUG
                     print("🔴 [API] Decoding error: \(error)")
                     if let jsonString = String(data: data, encoding: .utf8) {
-                        let preview = String(jsonString.prefix(1000))
+                        let preview = String(jsonString.prefix(500))
                         print("🔴 [API] Failed JSON preview: \(preview)")
                     }
+                    #endif
                     throw PlexAPIError.decodingError(error)
                 }
             } catch {
                 lastError = error
+                #if DEBUG
                 print("⚠️ [API] Attempt \(attempt + 1)/\(retries) failed: \(error.localizedDescription)")
+                #endif
 
                 // Don't retry on certain errors - they won't succeed on retry
                 if let apiError = error as? PlexAPIError {
                     switch apiError {
                     case .unauthorized, .notFound, .decodingError:
-                        print("❌ [API] Non-retryable error, failing immediately")
                         throw apiError
                     default:
                         break
                     }
-                }
-
-                // If this was the last attempt, don't sleep
-                if attempt == retries - 1 {
-                    print("❌ [API] All retry attempts exhausted")
                 }
             }
         }
@@ -266,7 +266,9 @@ class PlexAPIClient {
     }
 
     func getOnDeck() async throws -> [PlexMetadata] {
+        #if DEBUG
         print("📚 [API] Requesting OnDeck from /library/onDeck")
+        #endif
         let queryItems = [
             URLQueryItem(name: "includeImages", value: "1"),
             URLQueryItem(name: "includeExtras", value: "1"),
@@ -277,82 +279,82 @@ class PlexAPIClient {
             queryItems: queryItems
         )
         let container = response.MediaContainer
+        #if DEBUG
         print("📚 [API] OnDeck response - size: \(container.size), items: \(container.items.count)")
+        #endif
 
-        // Debug: Check which items have clearLogos in the initial response
-        for item in container.items {
-            let hasLogo = item.clearLogo != nil
-            let itemType = item.type ?? "unknown"
-            print("📚 [API] Item '\(item.title)' (type: \(itemType)) - has clearLogo: \(hasLogo)")
-        }
-
-        // Enrich episodes with show logos
+        // Enrich episodes with show logos using parallel fetching
         // The onDeck endpoint returns episode metadata, but clearLogos belong to the show (grandparent) level.
-        // For episodes without clearLogos, we fetch the show metadata to get the show's logo.
-        // This ensures logos display correctly in the Continue Watching row.
         var enrichedItems = container.items
-        var showLogoCache: [String: String?] = [:] // Cache show logos by grandparentRatingKey to avoid duplicate API calls
 
-        for (index, item) in enrichedItems.enumerated() {
-            // For episodes: fetch show (grandparent) metadata to get the show's logo
-            if item.type == "episode" && item.clearLogo == nil, let grandparentKey = item.grandparentRatingKey {
-                // Check cache first to avoid duplicate API calls for the same show
-                if let cachedLogo = showLogoCache[grandparentKey] {
-                    if let logo = cachedLogo {
-                        print("📚 [API] Using cached clearLogo for episode: \(item.title)")
-                        var updatedItem = item
-                        let logoImage = PlexImage(type: "clearLogo", url: logo)
-                        updatedItem.Image = (item.Image ?? []) + [logoImage]
-                        enrichedItems[index] = updatedItem
-                    }
-                } else {
-                    print("📚 [API] Episode \(item.title) missing clearLogo, fetching show metadata from ratingKey: \(grandparentKey)")
-                    do {
-                        let showMetadata = try await getMetadata(ratingKey: grandparentKey)
-                        showLogoCache[grandparentKey] = showMetadata.clearLogo
+        // Collect unique keys that need fetching (episodes by grandparentRatingKey, movies by ratingKey)
+        var showKeysToFetch: Set<String> = []
+        var movieKeysToFetch: Set<String> = []
 
-                        if let showLogo = showMetadata.clearLogo {
-                            print("📚 [API] Found clearLogo for show: \(showMetadata.title)")
-                            var updatedItem = item
-                            let logoImage = PlexImage(type: "clearLogo", url: showLogo)
-                            updatedItem.Image = (item.Image ?? []) + [logoImage]
-                            enrichedItems[index] = updatedItem
-                        } else {
-                            print("📚 [API] Show \(showMetadata.title) has no clearLogo")
-                        }
-                    } catch {
-                        print("📚 [API] Failed to fetch show metadata: \(error)")
-                        showLogoCache[grandparentKey] = nil // Cache the failure
-                    }
-                }
-            }
-
-            // For movies: fetch movie metadata if clearLogo is missing
-            else if item.type == "movie" && item.clearLogo == nil, let ratingKey = item.ratingKey {
-                print("📚 [API] Movie '\(item.title)' missing clearLogo, fetching full metadata from ratingKey: \(ratingKey)")
-                do {
-                    let movieMetadata = try await getMetadata(ratingKey: ratingKey)
-                    if let movieLogo = movieMetadata.clearLogo {
-                        print("📚 [API] Found clearLogo for movie: \(movieMetadata.title)")
-                        var updatedItem = item
-                        let logoImage = PlexImage(type: "clearLogo", url: movieLogo)
-                        updatedItem.Image = (item.Image ?? []) + [logoImage]
-                        enrichedItems[index] = updatedItem
-                    } else {
-                        print("📚 [API] Movie \(movieMetadata.title) has no clearLogo available")
-                    }
-                } catch {
-                    print("📚 [API] Failed to fetch movie metadata: \(error)")
-                }
-            }
-        }
-
-        // Debug: Summary of enrichment results
-        print("📚 [API] Enrichment complete. Summary:")
         for item in enrichedItems {
-            let hasLogo = item.clearLogo != nil
-            print("📚 [API]   - '\(item.title)' (type: \(item.type ?? "unknown")) - has clearLogo after enrichment: \(hasLogo)")
+            if item.type == "episode" && item.clearLogo == nil, let grandparentKey = item.grandparentRatingKey {
+                showKeysToFetch.insert(grandparentKey)
+            } else if item.type == "movie" && item.clearLogo == nil, let ratingKey = item.ratingKey {
+                movieKeysToFetch.insert(ratingKey)
+            }
         }
+
+        // Fetch all show/movie metadata in parallel using TaskGroup
+        var logoCache: [String: String?] = [:]
+
+        await withTaskGroup(of: (String, String?).self) { group in
+            // Add tasks for shows
+            for showKey in showKeysToFetch {
+                group.addTask {
+                    do {
+                        let metadata = try await self.getMetadata(ratingKey: showKey)
+                        return (showKey, metadata.clearLogo)
+                    } catch {
+                        return (showKey, nil)
+                    }
+                }
+            }
+
+            // Add tasks for movies
+            for movieKey in movieKeysToFetch {
+                group.addTask {
+                    do {
+                        let metadata = try await self.getMetadata(ratingKey: movieKey)
+                        return (movieKey, metadata.clearLogo)
+                    } catch {
+                        return (movieKey, nil)
+                    }
+                }
+            }
+
+            // Collect results
+            for await (key, logo) in group {
+                logoCache[key] = logo
+            }
+        }
+
+        // Apply logos to items
+        for (index, item) in enrichedItems.enumerated() {
+            if item.type == "episode" && item.clearLogo == nil, let grandparentKey = item.grandparentRatingKey {
+                if let logo = logoCache[grandparentKey] ?? nil {
+                    var updatedItem = item
+                    let logoImage = PlexImage(type: "clearLogo", url: logo)
+                    updatedItem.Image = (item.Image ?? []) + [logoImage]
+                    enrichedItems[index] = updatedItem
+                }
+            } else if item.type == "movie" && item.clearLogo == nil, let ratingKey = item.ratingKey {
+                if let logo = logoCache[ratingKey] ?? nil {
+                    var updatedItem = item
+                    let logoImage = PlexImage(type: "clearLogo", url: logo)
+                    updatedItem.Image = (item.Image ?? []) + [logoImage]
+                    enrichedItems[index] = updatedItem
+                }
+            }
+        }
+
+        #if DEBUG
+        print("📚 [API] Enrichment complete: \(enrichedItems.count) items, \(showKeysToFetch.count) shows + \(movieKeysToFetch.count) movies fetched in parallel")
+        #endif
 
         return enrichedItems
     }
