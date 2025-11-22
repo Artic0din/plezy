@@ -4,7 +4,7 @@
 //
 //  TV show detail view with:
 //  - ONE fixed-size card (no card behind card)
-//  - Card position NEVER moves when focus changes
+//  - Card is centered and NEVER moves on focus
 //  - Synopsis swaps based on episode focus
 //  - Single episodes row with all seasons
 //
@@ -33,42 +33,44 @@ struct MediaDetailView: View {
     // Playback
     @State private var playMedia: PlexMetadata?
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // CARD DIMENSIONS - Fixed size, consistent across all shows
-    // ═══════════════════════════════════════════════════════════════════════════
     private let cardWidth: CGFloat = 1720
     private let cardHeight: CGFloat = 900
     private let cardCornerRadius: CGFloat = 24
     private let cardPadding: CGFloat = 48
 
     var body: some View {
-        // ═══════════════════════════════════════════════════════════════════════
-        // ROOT ZSTACK - Card is centered and NEVER moves vertically
-        // No ScrollView wrapper, no FocusSection that could auto-scroll
-        // ═══════════════════════════════════════════════════════════════════════
-        ZStack {
-            // LAYER 1: Full-screen dimmed backdrop (NOT a card, just background)
-            dimmedBackdrop
+        // ROOT: GeometryReader to properly center card on screen
+        GeometryReader { geometry in
+            ZStack {
+                // LAYER 1: Full-screen dimmed backdrop
+                // This is NOT a card - just a flat background with no rounded corners
+                backgroundLayer
 
-            // LAYER 2: The ONE and ONLY card - fixed position, centered
-            ShowDetailCard(
-                media: displayMedia,
-                seasons: seasons,
-                allEpisodes: allEpisodes,
-                selectedSeason: $selectedSeason,
-                focusedEpisode: $focusedEpisode,
-                onDeckEpisode: onDeckEpisode,
-                trailers: trailers,
-                onPlay: handlePlay,
-                onPlayEpisode: { episode in playMedia = episode },
-                cardWidth: cardWidth,
-                cardHeight: cardHeight,
-                cardCornerRadius: cardCornerRadius,
-                cardPadding: cardPadding
-            )
-            .environmentObject(authService)
-            // Card is centered and position is LOCKED - never moves
-            .position(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2)
+                // LAYER 2: The ONE and ONLY card - centered on screen
+                ShowDetailCard(
+                    media: displayMedia,
+                    seasons: seasons,
+                    allEpisodes: allEpisodes,
+                    selectedSeason: $selectedSeason,
+                    focusedEpisode: $focusedEpisode,
+                    onDeckEpisode: onDeckEpisode,
+                    trailers: trailers,
+                    onPlay: handlePlay,
+                    onPlayEpisode: { episode in playMedia = episode },
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    cardCornerRadius: cardCornerRadius,
+                    cardPadding: cardPadding
+                )
+                .environmentObject(authService)
+                // Center the card in available space
+                .frame(width: cardWidth, height: cardHeight)
+                .position(
+                    x: geometry.size.width / 2,
+                    y: geometry.size.height / 2
+                )
+            }
         }
         .ignoresSafeArea()
         .task { await loadDetails() }
@@ -78,14 +80,14 @@ struct MediaDetailView: View {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DIMMED BACKDROP: Full-screen show artwork, dimmed (NOT a card)
-    // This is NOT a rounded card - just a flat full-screen background
-    // ═══════════════════════════════════════════════════════════════════════════
-    private var dimmedBackdrop: some View {
+    // BACKGROUND LAYER: Full-screen, NO rounded corners, NO card styling
+    private var backgroundLayer: some View {
         ZStack {
+            // Solid black base
             Color.black
+                .ignoresSafeArea()
 
+            // Dimmed artwork overlay (NOT a card, just a background image)
             if let url = artworkURL(for: displayMedia.art) {
                 CachedAsyncImage(url: url) { image in
                     image
@@ -94,10 +96,10 @@ struct MediaDetailView: View {
                 } placeholder: {
                     Color.black
                 }
-                .opacity(0.15)
+                .ignoresSafeArea()
+                .opacity(0.12)
             }
         }
-        .ignoresSafeArea()
     }
 
     // MARK: - Computed Properties
@@ -191,13 +193,10 @@ struct MediaDetailView: View {
 }
 
 // MARK: - ShowDetailCard
-// ═══════════════════════════════════════════════════════════════════════════════
 // THE ONE AND ONLY CARD on screen.
 // - Fixed dimensions that NEVER change
-// - Artwork background with gradient (inside the card, not behind it)
-// - Layout: Hero block → Season chips → Episodes row
-// - No extra rounded containers, no card-behind-card
-// ═══════════════════════════════════════════════════════════════════════════════
+// - Uses .background() for artwork inside the card bounds
+// - No extra RoundedRectangles or nested cards
 
 struct ShowDetailCard: View {
     let media: PlexMetadata
@@ -218,75 +217,12 @@ struct ShowDetailCard: View {
     @EnvironmentObject var authService: PlexAuthService
 
     var body: some View {
-        // ═══════════════════════════════════════════════════════════════════════
-        // SINGLE CARD STRUCTURE
-        // ZStack: artwork background + content overlay
-        // No nested cards, no extra RoundedRectangles
-        // ═══════════════════════════════════════════════════════════════════════
-        ZStack(alignment: .bottomLeading) {
-            // Card background: artwork + gradient overlay
-            artworkBackground
-
-            // Card content: hero + season chips + episodes
-            cardContent
-        }
-        // FIXED SIZE - dimensions never change regardless of content/focus
-        .frame(width: cardWidth, height: cardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ARTWORK BACKGROUND (inside the card, NOT a separate card behind)
-    // ═══════════════════════════════════════════════════════════════════════════
-    private var artworkBackground: some View {
-        ZStack {
-            // Show artwork
-            if let url = artworkURL(for: media.art) {
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Color.black
-                }
-                .frame(width: cardWidth, height: cardHeight)
-                .clipped()
-            } else {
-                Color.black
-            }
-
-            // Gradient overlay for text readability
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.4),
-                    Color.black.opacity(0.7),
-                    Color.black.opacity(0.95)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // CARD CONTENT LAYOUT
-    // Vertical order (top to bottom):
-    //   1. Logo/Title
-    //   2. Media details (type, rating, year, runtime)
-    //   3. Synopsis/description (swaps on episode focus)
-    //   4. Action buttons
-    //   5. Season selector chips (NO label)
-    //   6. Episodes row (NO label)
-    // ═══════════════════════════════════════════════════════════════════════════
-    private var cardContent: some View {
+        // Card content - no nested ZStacks with backgrounds
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
 
-            // HERO BLOCK: grouped together, positioned just above season chips
+            // HERO BLOCK: Logo + Metadata + Synopsis + Buttons
+            // Positioned just above the season selector
             VStack(alignment: .leading, spacing: 12) {
                 logoOrTitle
                 metadataRow
@@ -295,13 +231,12 @@ struct ShowDetailCard: View {
             }
             .padding(.horizontal, cardPadding)
 
-            // SEASON CHIPS (no label, directly under hero)
+            // SEASON CHIPS + EPISODES ROW
             if media.type == "show" && !seasons.isEmpty {
                 seasonChipsRow
                     .padding(.top, 20)
                     .padding(.horizontal, cardPadding)
 
-                // EPISODES ROW (no label, directly under chips)
                 episodesRow
                     .padding(.top, 14)
                     .padding(.bottom, cardPadding - 6)
@@ -309,11 +244,47 @@ struct ShowDetailCard: View {
                 Spacer().frame(height: cardPadding)
             }
         }
+        .frame(width: cardWidth, height: cardHeight)
+        // SINGLE BACKGROUND - artwork + gradient, clipped to card shape
+        .background(
+            ZStack {
+                // Artwork fills the card
+                if let url = artworkURL(for: media.art) {
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Color.black
+                    }
+                    .frame(width: cardWidth, height: cardHeight)
+                    .clipped()
+                } else {
+                    Color.black
+                }
+
+                // Gradient overlay for text readability
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.3),
+                        Color.black.opacity(0.65),
+                        Color.black.opacity(0.92)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        )
+        // THE ONLY clipShape - creates the single rounded card
+        .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+        // Subtle border
+        .overlay(
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HERO COMPONENTS
-    // ═══════════════════════════════════════════════════════════════════════════
+    // MARK: - Hero Components
 
     private var logoOrTitle: some View {
         Group {
@@ -361,12 +332,7 @@ struct ShowDetailCard: View {
         return chips
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SYNOPSIS AREA
-    // - Shows series synopsis when no episode is focused
-    // - Shows episode info when an episode is focused
-    // - Fixed height to prevent layout shift
-    // ═══════════════════════════════════════════════════════════════════════════
+    // SYNOPSIS AREA - Fixed height, content swaps on episode focus
     private var synopsisArea: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let episode = focusedEpisode {
@@ -416,9 +382,7 @@ struct ShowDetailCard: View {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // ACTION BUTTONS
-    // ═══════════════════════════════════════════════════════════════════════════
     private var actionButtons: some View {
         HStack(spacing: 14) {
             Button(action: onPlay) {
@@ -464,9 +428,7 @@ struct ShowDetailCard: View {
         return media.progress > 0 ? "Resume" : "Play"
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SEASON CHIPS ROW (NO "Season" label)
-    // ═══════════════════════════════════════════════════════════════════════════
+    // SEASON CHIPS ROW (no label)
     private var seasonChipsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -481,11 +443,7 @@ struct ShowDetailCard: View {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // EPISODES ROW (NO "Episodes" label)
-    // All episodes from all seasons in one horizontal row
-    // Season chip selection scrolls to that season's first episode
-    // ═══════════════════════════════════════════════════════════════════════════
+    // EPISODES ROW (no label)
     private var episodesRow: some View {
         EpisodesRow(
             episodes: allEpisodes,
