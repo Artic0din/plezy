@@ -913,7 +913,7 @@ struct WatchStatusButton: View {
         parentKey: nil, parentTitle: nil, parentThumb: nil, parentIndex: nil,
         index: nil, childCount: nil, leafCount: nil, viewedLeafCount: nil,
         media: nil, role: nil, genre: nil, director: nil, writer: nil,
-        country: nil, Image: nil
+        country: nil, Image: nil, Guid: nil
     ))
     .environmentObject(PlexAuthService())
 }

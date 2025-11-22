@@ -1228,7 +1228,8 @@ class VideoPlayerManager: ObservableObject {
         director: nil,
         writer: nil,
         country: nil,
-        Image: nil
+        Image: nil,
+        Guid: nil
     ))
     .environmentObject(PlexAuthService())
 }

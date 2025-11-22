@@ -66,7 +66,7 @@ actor NetworkLogoCache {
 class TMDBService {
     static let shared = TMDBService()
 
-    private let apiKey = "YOUR_TMDB_API_KEY"  // Replace with actual API key
+    private let apiKey = "8a4a42bf0ce31ddff08d632c07cb434a"
     private let baseURL = "https://api.themoviedb.org/3"
     private let imageBaseURL = "https://image.tmdb.org/t/p"
 

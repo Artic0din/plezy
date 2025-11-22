@@ -403,7 +403,8 @@ struct EpisodeRow: View {
             director: nil,
             writer: nil,
             country: nil,
-            Image: nil
+            Image: nil,
+            Guid: nil
         ),
         show: PlexMetadata(
             ratingKey: "0",
@@ -454,7 +455,8 @@ struct EpisodeRow: View {
             director: nil,
             writer: nil,
             country: nil,
-            Image: nil
+            Image: nil,
+            Guid: nil
         )
     )
     .environmentObject(PlexAuthService())
