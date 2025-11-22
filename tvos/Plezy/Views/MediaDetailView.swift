@@ -703,15 +703,6 @@ struct EpisodeThumbnail: View {
                                 .padding(.bottom, 4)
                         }
                     }
-
-                    // Layer 3: Play overlay on focus (styling only)
-                    if isFocused {
-                        Color.black.opacity(0.2)
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 44))
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 2)
-                    }
                 }
                 // Fixed frame - NEVER changes with focus
                 .frame(width: cardWidth, height: cardHeight)
