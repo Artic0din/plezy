@@ -597,7 +597,10 @@ struct SeasonChip: View {
                 )
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(isFocused ? 0.6 : 0.15), lineWidth: 1)
+                        .strokeBorder(
+                            isFocused ? Color.white.opacity(0.6) : Color.clear,
+                            lineWidth: isFocused ? 2 : 0
+                        )
                 )
         }
         .buttonStyle(MediaCardButtonStyle())
