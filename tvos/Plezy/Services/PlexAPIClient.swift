@@ -655,17 +655,62 @@ extension PlexAPIClient {
     // MARK: - Server Discovery
 
     func getServers() async throws -> [PlexServer] {
-        // The /api/v2/resources endpoint returns servers wrapped in MediaContainer.Device
+        // The /api/v2/resources endpoint returns a plain array of resources (not wrapped)
         let queryItems = [
             URLQueryItem(name: "includeHttps", value: "1"),
             URLQueryItem(name: "includeRelay", value: "1")
         ]
 
-        let response: PlexResponse<PlexServer> = try await request(
+        let servers: [PlexServer] = try await requestArray(
             path: "/api/v2/resources",
             queryItems: queryItems
         )
-        return response.MediaContainer.items
+        return servers
+    }
+
+    /// Request that returns an array directly (not wrapped in MediaContainer)
+    private func requestArray<T: Decodable>(
+        path: String,
+        method: String = "GET",
+        queryItems: [URLQueryItem]? = nil
+    ) async throws -> [T] {
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        urlComponents?.queryItems = queryItems
+
+        guard let url = urlComponents?.url else {
+            throw PlexAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        print("🌐 [API] \(method) \(url) (attempt 1/3)")
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PlexAPIError.invalidResponse
+        }
+
+        print("🌐 [API] Response: \(httpResponse.statusCode) - \(data.count) bytes")
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw PlexAPIError.serverError(statusCode: httpResponse.statusCode)
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode([T].self, from: data)
+        } catch {
+            print("🔴 [API] Array decoding error: \(error)")
+            if let dataString = String(data: data, encoding: .utf8) {
+                print("🔴 [API] Response data: \(dataString.prefix(500))")
+            }
+            throw PlexAPIError.decodingError(error)
+        }
     }
 
     // MARK: - Home Users
