@@ -243,7 +243,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         proposal.automaticAcceptanceInterval = 15
 
         // Set the proposal on the player view controller
-        controller.contentProposalForCurrentTime = proposal
+        controller.nextContentProposal = proposal
 
         print("📺 [ContentProposal] Configured proposal for: \(nextEpisode.title)")
     }
@@ -522,7 +522,7 @@ class VideoPlayerManager: ObservableObject {
 
             let playbackDecision = try await client.getPlaybackURL(
                 partKey: part.key,
-                mediaKey: mediaItem.id ?? "",
+                mediaKey: String(mediaItem.id),
                 ratingKey: ratingKey,
                 duration: detailedMedia.duration
             )
