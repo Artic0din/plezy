@@ -69,6 +69,15 @@ struct MediaDetailView: View {
             VideoPlayerView(media: media)
                 .environmentObject(authService)
         }
+        .onChange(of: playMedia) { oldValue, newValue in
+            // Refresh episodes when returning from video playback
+            if oldValue != nil && newValue == nil {
+                print("📺 [MediaDetailView] Video player dismissed, refreshing episodes...")
+                Task {
+                    await refreshEpisodes()
+                }
+            }
+        }
     }
 
     // BACKGROUND LAYER: Black with gradient from bottom
@@ -178,6 +187,26 @@ struct MediaDetailView: View {
 
         let urls = allEpisodes.compactMap { artworkURL(for: $0.thumb) }
         ImageCacheService.shared.prefetch(urls: urls)
+    }
+
+    /// Lightweight refresh of episodes after video playback to update progress bars
+    private func refreshEpisodes() async {
+        guard let client = authService.currentClient,
+              let ratingKey = media.ratingKey,
+              media.type == "show" else { return }
+
+        do {
+            // Refresh onDeck episode first (most likely to have changed)
+            let onDeckItems = try await client.getOnDeck()
+            onDeckEpisode = onDeckItems.first { $0.grandparentRatingKey == ratingKey }
+
+            // Refresh all episodes to update progress bars
+            await loadAllEpisodes(client: client)
+
+            print("📺 [MediaDetailView] Episodes refreshed, onDeck: \(onDeckEpisode?.title ?? "none")")
+        } catch {
+            print("🔴 [MediaDetailView] Error refreshing episodes: \(error)")
+        }
     }
 }
 

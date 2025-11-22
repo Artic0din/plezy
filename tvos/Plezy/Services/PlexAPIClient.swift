@@ -407,7 +407,22 @@ class PlexAPIClient {
             path: "/hubs/search",
             queryItems: queryItems
         )
-        return response.MediaContainer.items
+
+        // The /hubs/search endpoint returns Hub objects with nested metadata
+        // Extract metadata from each hub and filter for movies, shows, and episodes
+        var results: [PlexMetadata] = []
+        let validTypes = Set(["movie", "show", "episode"])
+
+        if let hubs = response.MediaContainer.hub {
+            for hub in hubs {
+                // Only include hubs with valid media types
+                if validTypes.contains(hub.type), let metadata = hub.metadata {
+                    results.append(contentsOf: metadata)
+                }
+            }
+        }
+
+        return results
     }
 
     // MARK: - Playback & Progress

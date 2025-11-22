@@ -88,6 +88,15 @@ struct HomeView: View {
                 }
             }
         }
+        .onChange(of: playingMedia) { oldValue, newValue in
+            // Refresh Continue Watching when returning from video playback
+            if oldValue != nil && newValue == nil {
+                print("🏠 [HomeView] Video player dismissed, refreshing Continue Watching...")
+                Task {
+                    await refreshOnDeck()
+                }
+            }
+        }
     }
 
     // MARK: - Full-Screen Hero Layout
@@ -407,6 +416,27 @@ struct HomeView: View {
 
         // Reload content
         await loadContent()
+    }
+
+    /// Lightweight refresh of just the Continue Watching row after video playback
+    private func refreshOnDeck() async {
+        guard let client = authService.currentClient,
+              let serverID = authService.selectedServer?.clientIdentifier else {
+            return
+        }
+
+        do {
+            let fetchedOnDeck = try await client.getOnDeck()
+            self.onDeck = fetchedOnDeck
+
+            // Update cache with new onDeck data
+            let cacheKey = CacheService.homeKey(serverID: serverID)
+            cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: self.hubs))
+
+            print("🔄 [HomeView] Continue Watching refreshed: \(fetchedOnDeck.count) items")
+        } catch {
+            print("🔴 [HomeView] Error refreshing Continue Watching: \(error)")
+        }
     }
 }
 
