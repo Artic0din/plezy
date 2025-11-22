@@ -119,8 +119,8 @@ struct SearchView: View {
                         }
                         .frame(height: 0)
 
-                        SearchGridLayoutView(
-                            items: searchResults,
+                        SearchResultsView(
+                            results: searchResults,
                             onItemTapped: { item in
                                 selectedMedia = item
                             }
@@ -172,21 +172,20 @@ struct SearchGridWidthPreferenceKey: PreferenceKey {
     }
 }
 
-/// Grid layout view with 4 columns and consistent spacing for search results
-struct SearchGridLayoutView: View {
-    let items: [PlexMetadata]
+/// Categorized search results with section headings
+struct SearchResultsView: View {
+    let results: [PlexMetadata]
     let onItemTapped: (PlexMetadata) -> Void
 
     @EnvironmentObject var authService: PlexAuthService
     @State private var availableWidth: CGFloat = 1920
 
-    // Layout constants - larger cards for immersive experience
-    private let columnsCount = 4  // Fewer columns = larger cards
+    // Layout constants
+    private let columnsCount = 4
     private let spacing: CGFloat = 48
-    private let aspectRatio: CGFloat = 236.0 / 420.0 // Height / Width (16:9)
+    private let aspectRatio: CGFloat = 236.0 / 420.0
 
     private var cardWidth: CGFloat {
-        // Calculate card width: availableWidth - edge padding - internal spacing
         let totalHorizontalSpacing = (2 * spacing) + (CGFloat(columnsCount - 1) * spacing)
         let availableForCards = availableWidth - totalHorizontalSpacing
         return availableForCards / CGFloat(columnsCount)
@@ -200,27 +199,103 @@ struct SearchGridLayoutView: View {
         Array(repeating: GridItem(.fixed(cardWidth), spacing: spacing), count: columnsCount)
     }
 
+    // Separate results by type
+    private var movies: [PlexMetadata] {
+        results.filter { $0.type == "movie" }
+    }
+
+    private var tvShows: [PlexMetadata] {
+        results.filter { $0.type == "show" }
+    }
+
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
-            ForEach(items) { item in
-                MediaCard(
-                    media: item,
-                    config: .custom(
-                        width: cardWidth,
-                        height: cardHeight,
-                        showProgress: true,
-                        showLabel: .inside,
-                        showLogo: true,
-                        showEpisodeLabelBelow: false
-                    )
-                ) {
-                    onItemTapped(item)
-                }
+        VStack(alignment: .leading, spacing: 40) {
+            // Movies Section
+            if !movies.isEmpty {
+                SearchSection(
+                    title: "Movies",
+                    icon: "film.fill",
+                    items: movies,
+                    columns: columns,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    spacing: spacing,
+                    onItemTapped: onItemTapped
+                )
+                .environmentObject(authService)
+            }
+
+            // TV Shows Section
+            if !tvShows.isEmpty {
+                SearchSection(
+                    title: "TV Shows",
+                    icon: "tv.fill",
+                    items: tvShows,
+                    columns: columns,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    spacing: spacing,
+                    onItemTapped: onItemTapped
+                )
+                .environmentObject(authService)
             }
         }
-        .padding(.horizontal, spacing)
         .onPreferenceChange(SearchGridWidthPreferenceKey.self) { width in
             availableWidth = width
+        }
+    }
+}
+
+/// Section with header and grid of items
+struct SearchSection: View {
+    let title: String
+    let icon: String
+    let items: [PlexMetadata]
+    let columns: [GridItem]
+    let cardWidth: CGFloat
+    let cardHeight: CGFloat
+    let spacing: CGFloat
+    let onItemTapped: (PlexMetadata) -> Void
+
+    @EnvironmentObject var authService: PlexAuthService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // Section Header
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(.beaconPurple)
+
+                Text(title)
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.white)
+
+                Text("(\(items.count))")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.gray)
+            }
+            .padding(.horizontal, spacing)
+
+            // Grid
+            LazyVGrid(columns: columns, alignment: .leading, spacing: spacing) {
+                ForEach(items) { item in
+                    MediaCard(
+                        media: item,
+                        config: .custom(
+                            width: cardWidth,
+                            height: cardHeight,
+                            showProgress: true,
+                            showLabel: .inside,
+                            showLogo: true,
+                            showEpisodeLabelBelow: false
+                        )
+                    ) {
+                        onItemTapped(item)
+                    }
+                }
+            }
+            .padding(.horizontal, spacing)
         }
     }
 }
