@@ -562,14 +562,20 @@ extension PlexAPIClient {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw PlexAPIError.serverError
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw PlexAPIError.serverError(statusCode: statusCode)
         }
 
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw PlexAPIError.decodingError
+        do {
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw PlexAPIError.decodingError(NSError(domain: "PlexAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Response is not a dictionary"]))
+            }
+            return json
+        } catch let error as PlexAPIError {
+            throw error
+        } catch {
+            throw PlexAPIError.decodingError(error)
         }
-
-        return json
     }
 
     func getUser() async throws -> PlexUser {
