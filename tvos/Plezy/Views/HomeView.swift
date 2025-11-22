@@ -88,6 +88,17 @@ struct HomeView: View {
                 }
             }
         }
+        .onReceive(authService.$currentClient) { client in
+            // Load content when client becomes available (fixes initial load timing)
+            // Check if we have no content yet and client is now available
+            if client != nil && (noServerSelected || (onDeck.isEmpty && hubs.isEmpty && !isLoading)) {
+                print("🏠 [HomeView] Client became available, loading content...")
+                noServerSelected = false
+                Task {
+                    await loadContent()
+                }
+            }
+        }
         .onChange(of: playingMedia) { oldValue, newValue in
             // Refresh Continue Watching when returning from video playback
             if oldValue != nil && newValue == nil {

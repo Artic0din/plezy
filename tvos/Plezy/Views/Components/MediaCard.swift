@@ -159,21 +159,25 @@ struct MediaCard: View {
 
                     // Layer 4: Progress bar overlay (if enabled)
                     if config.showProgress && media.progress > 0 && media.progress < 0.98 {
-                        VStack {
+                        VStack(spacing: 0) {
                             Spacer()
-                            ZStack(alignment: .leading) {
-                                // Background capsule
-                                Capsule()
-                                    .fill(.regularMaterial.opacity(0.4))
-                                    .frame(width: config.width, height: 5)
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    // Background capsule
+                                    Capsule()
+                                        .fill(.white.opacity(0.3))
+                                        .frame(height: 6)
 
-                                // Progress capsule
-                                Capsule()
-                                    .fill(Color.beaconGradient)
-                                    .frame(width: config.width * media.progress, height: 5)
-                                    .shadow(color: Color.beaconMagenta.opacity(0.6), radius: 4, x: 0, y: 0)
+                                    // Progress capsule
+                                    Capsule()
+                                        .fill(Color.beaconGradient)
+                                        .frame(width: geo.size.width * media.progress, height: 6)
+                                        .shadow(color: Color.beaconMagenta.opacity(0.6), radius: 4, x: 0, y: 0)
+                                }
                             }
-                            .padding(.bottom, 8)
+                            .frame(height: 6)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 12)
                         }
                     }
 
