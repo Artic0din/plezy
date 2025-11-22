@@ -502,6 +502,187 @@ class PlexAPIClient {
         case paused
         case stopped
     }
+
+    // MARK: - Playback Decision & Transcoding
+
+    /// Playback decision result containing URL and method
+    struct PlaybackDecision {
+        enum PlaybackMethod {
+            case directPlay
+            case directStream
+            case transcode
+        }
+
+        let url: URL
+        let method: PlaybackMethod
+        let sessionID: String?
+    }
+
+    /// Get the best playback URL for a media item with fallback strategy
+    /// Order: Direct Play → Direct Stream → Transcode
+    func getPlaybackURL(
+        partKey: String,
+        mediaKey: String,
+        ratingKey: String,
+        duration: Int? = nil
+    ) async throws -> PlaybackDecision {
+        // Generate a unique session ID for this playback
+        let sessionID = UUID().uuidString
+
+        // Step 1: Try Direct Play first
+        let directPlayURL = buildDirectPlayURL(partKey: partKey)
+        if await canPlayDirectly(url: directPlayURL) {
+            print("✅ [Playback] Direct Play available")
+            return PlaybackDecision(url: directPlayURL, method: .directPlay, sessionID: sessionID)
+        }
+
+        // Step 2: Try Direct Stream (container remux without transcoding)
+        print("⚠️ [Playback] Direct Play failed, trying Direct Stream...")
+        if let directStreamURL = buildDirectStreamURL(partKey: partKey, sessionID: sessionID) {
+            if await canPlayDirectly(url: directStreamURL) {
+                print("✅ [Playback] Direct Stream available")
+                return PlaybackDecision(url: directStreamURL, method: .directStream, sessionID: sessionID)
+            }
+        }
+
+        // Step 3: Fall back to Transcode
+        print("⚠️ [Playback] Direct Stream failed, falling back to Transcode...")
+        let transcodeURL = buildTranscodeURL(
+            partKey: partKey,
+            mediaKey: mediaKey,
+            ratingKey: ratingKey,
+            sessionID: sessionID,
+            duration: duration
+        )
+        print("✅ [Playback] Using Transcode URL")
+        return PlaybackDecision(url: transcodeURL, method: .transcode, sessionID: sessionID)
+    }
+
+    /// Build direct play URL (original file)
+    private func buildDirectPlayURL(partKey: String) -> URL {
+        var urlString = baseURL.absoluteString + partKey
+        if !urlString.contains("?") {
+            urlString += "?"
+        } else {
+            urlString += "&"
+        }
+        if let token = accessToken {
+            urlString += "X-Plex-Token=\(token)"
+        }
+        return URL(string: urlString)!
+    }
+
+    /// Build direct stream URL (remuxed container, no transcoding)
+    private func buildDirectStreamURL(partKey: String, sessionID: String) -> URL? {
+        // Direct stream uses /video/:/transcode/universal/start.m3u8 with directStream=1
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.path = "/video/:/transcode/universal/start.m3u8"
+
+        var queryItems = [
+            URLQueryItem(name: "path", value: partKey),
+            URLQueryItem(name: "session", value: sessionID),
+            URLQueryItem(name: "protocol", value: "hls"),
+            URLQueryItem(name: "directPlay", value: "0"),
+            URLQueryItem(name: "directStream", value: "1"),
+            URLQueryItem(name: "directStreamAudio", value: "1"),
+            URLQueryItem(name: "copyts", value: "1"),
+            URLQueryItem(name: "mediaBufferSize", value: "50000"),
+            URLQueryItem(name: "X-Plex-Client-Identifier", value: Self.plexClientIdentifier),
+            URLQueryItem(name: "X-Plex-Product", value: Self.plexProduct),
+            URLQueryItem(name: "X-Plex-Platform", value: Self.plexPlatform)
+        ]
+
+        if let token = accessToken {
+            queryItems.append(URLQueryItem(name: "X-Plex-Token", value: token))
+        }
+
+        components?.queryItems = queryItems
+        return components?.url
+    }
+
+    /// Build transcode URL (full transcoding)
+    private func buildTranscodeURL(
+        partKey: String,
+        mediaKey: String,
+        ratingKey: String,
+        sessionID: String,
+        duration: Int?
+    ) -> URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        components.path = "/video/:/transcode/universal/start.m3u8"
+
+        // Apple TV supports H.264/HEVC up to 4K, AAC/AC3/EAC3 audio
+        var queryItems = [
+            URLQueryItem(name: "path", value: "/library/metadata/\(ratingKey)"),
+            URLQueryItem(name: "session", value: sessionID),
+            URLQueryItem(name: "protocol", value: "hls"),
+            URLQueryItem(name: "directPlay", value: "0"),
+            URLQueryItem(name: "directStream", value: "0"),
+            // Video settings - prefer HEVC for better quality/bandwidth
+            URLQueryItem(name: "videoCodec", value: "h264,hevc"),
+            URLQueryItem(name: "videoResolution", value: "3840x2160"),
+            URLQueryItem(name: "maxVideoBitrate", value: "40000"),
+            // Audio settings - Apple TV supports these codecs
+            URLQueryItem(name: "audioCodec", value: "aac,ac3,eac3"),
+            URLQueryItem(name: "audioBoost", value: "100"),
+            // Subtitles
+            URLQueryItem(name: "subtitleSize", value: "100"),
+            URLQueryItem(name: "subtitles", value: "auto"),
+            // Buffer settings
+            URLQueryItem(name: "mediaBufferSize", value: "50000"),
+            URLQueryItem(name: "copyts", value: "1"),
+            URLQueryItem(name: "hasMDE", value: "1"),
+            // Client identification
+            URLQueryItem(name: "X-Plex-Client-Identifier", value: Self.plexClientIdentifier),
+            URLQueryItem(name: "X-Plex-Product", value: Self.plexProduct),
+            URLQueryItem(name: "X-Plex-Platform", value: Self.plexPlatform),
+            URLQueryItem(name: "X-Plex-Device", value: Self.plexDevice)
+        ]
+
+        if let token = accessToken {
+            queryItems.append(URLQueryItem(name: "X-Plex-Token", value: token))
+        }
+
+        components.queryItems = queryItems
+        return components.url!
+    }
+
+    /// Check if a URL can be played directly (HEAD request to verify accessibility)
+    private func canPlayDirectly(url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let success = (200...299).contains(httpResponse.statusCode)
+                print("🎬 [Playback] HEAD check for \(url.path): \(httpResponse.statusCode) - \(success ? "OK" : "FAILED")")
+                return success
+            }
+            return false
+        } catch {
+            print("🎬 [Playback] HEAD check failed for \(url.path): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Stop a transcode session
+    func stopTranscode(sessionID: String) async {
+        let queryItems = [
+            URLQueryItem(name: "session", value: sessionID)
+        ]
+
+        do {
+            let _: PlexMediaContainer<PlexMetadata> = try await request(
+                path: "/video/:/transcode/universal/stop",
+                queryItems: queryItems
+            )
+            print("🎬 [Playback] Stopped transcode session: \(sessionID)")
+        } catch {
+            print("⚠️ [Playback] Failed to stop transcode session: \(error)")
+        }
+    }
 }
 
 // MARK: - Plex.tv API Client

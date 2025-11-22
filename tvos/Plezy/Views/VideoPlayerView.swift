@@ -2,7 +2,12 @@
 //  VideoPlayerView.swift
 //  Beacon tvOS
 //
-//  Video player with AVKit
+//  Video player with AVKit featuring:
+//  - Playback fallback: Direct Play → Direct Stream → Transcode
+//  - tvOS content tabs (Info panel with metadata)
+//  - Content proposals for next episode (Up Next)
+//  - Skip intro/credits support
+//  - Chapter markers
 //
 
 import SwiftUI
@@ -55,7 +60,7 @@ struct VideoPlayerView: View {
                         .scaleEffect(1.5)
                         .tint(.white)
 
-                    Text("Loading video...")
+                    Text(playerManager.loadingMessage)
                         .font(.title2)
                         .foregroundColor(.white)
                 }
@@ -97,25 +102,6 @@ struct VideoPlayerView: View {
                     }
                 }
             }
-
-            // Next episode countdown overlay
-            if playerManager.showNextEpisodePrompt, let nextEp = playerManager.nextEpisode {
-                NextEpisodeOverlay(
-                    nextEpisode: nextEp,
-                    countdown: playerManager.nextEpisodeCountdown,
-                    onPlayNow: {
-                        playerManager.cancelNextEpisode()
-                        // Transition to next episode
-                        // Note: This requires dismissing current player and showing new one
-                        // For now, just dismiss - the view layer will handle navigation
-                        dismiss()
-                    },
-                    onCancel: {
-                        playerManager.cancelNextEpisode()
-                    }
-                )
-                .environmentObject(authService)
-            }
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             print("🔄 [VideoPlayerView] Scene phase changed from \(oldPhase) to \(newPhase)")
@@ -125,7 +111,6 @@ struct VideoPlayerView: View {
                 playerManager.player?.pause()
             case .active:
                 print("▶️ [VideoPlayerView] App active - resuming playback if it was playing")
-                // Only resume if we're not at the error or loading state
                 if playerManager.player != nil && playerManager.error == nil {
                     playerManager.player?.play()
                 }
@@ -149,8 +134,6 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
 
         #if os(tvOS)
         // tvOS-specific configuration for enhanced playback experience
-
-        // Configure transport bar customization (tvOS 16.0+)
         controller.transportBarIncludesTitleView = true
 
         // Set the coordinator as delegate
@@ -158,7 +141,6 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
 
         print("🎬 [Player] Configured AVPlayerViewController for tvOS")
         #else
-        // iOS-specific configuration
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         #endif
@@ -171,11 +153,101 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         if uiViewController.player !== playerManager.player {
             uiViewController.player = playerManager.player
         }
+
+        #if os(tvOS)
+        // Configure content tabs when metadata is available
+        if let detailedMedia = playerManager.detailedMedia {
+            configureContentTabs(controller: uiViewController, media: detailedMedia, context: context)
+        }
+
+        // Configure content proposal for next episode
+        if let nextEpisode = playerManager.nextEpisode, playerManager.shouldShowContentProposal {
+            configureContentProposal(controller: uiViewController, nextEpisode: nextEpisode, context: context)
+        }
+        #endif
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(playerManager: playerManager)
     }
+
+    #if os(tvOS)
+    /// Configure content tabs (Info panel) for tvOS
+    private func configureContentTabs(controller: AVPlayerViewController, media: PlexMetadata, context: Context) {
+        // Only configure once
+        guard controller.customInfoViewControllers.isEmpty else { return }
+
+        // Create info tab with metadata
+        let infoVC = createInfoViewController(for: media)
+        controller.customInfoViewControllers = [infoVC]
+
+        // Add contextual actions (buttons in transport bar)
+        var actions: [UIAction] = []
+
+        // Add "More Like This" action if available
+        actions.append(UIAction(
+            title: "More Info",
+            image: UIImage(systemName: "info.circle")
+        ) { _ in
+            print("📺 [ContentTabs] More Info tapped")
+        })
+
+        controller.contextualActions = actions
+
+        print("📺 [ContentTabs] Configured info tab and contextual actions")
+    }
+
+    /// Create the info view controller for content tabs
+    private func createInfoViewController(for media: PlexMetadata) -> UIViewController {
+        let hostingController = UIHostingController(rootView: PlayerInfoView(media: media))
+        hostingController.title = "Info"
+        hostingController.tabBarItem = UITabBarItem(
+            title: "Info",
+            image: UIImage(systemName: "info.circle"),
+            selectedImage: UIImage(systemName: "info.circle.fill")
+        )
+        return hostingController
+    }
+
+    /// Configure content proposal for next episode
+    private func configureContentProposal(
+        controller: AVPlayerViewController,
+        nextEpisode: PlexMetadata,
+        context: Context
+    ) {
+        // Create content proposal for the next episode
+        let proposal = AVContentProposal(
+            contentTimeForTransition: playerManager.contentProposalTime,
+            title: nextEpisode.title,
+            previewImage: nil // Could load thumbnail here
+        )
+
+        // Configure metadata for the proposal
+        var metadata: [AVMetadataItem] = []
+
+        // Add show title as subtitle
+        if let showTitle = nextEpisode.grandparentTitle {
+            let subtitleItem = AVMutableMetadataItem()
+            subtitleItem.identifier = .iTunesMetadataTrackSubTitle
+            if let season = nextEpisode.parentIndex, let episode = nextEpisode.index {
+                subtitleItem.value = "\(showTitle) • S\(season) E\(episode)" as NSString
+            } else {
+                subtitleItem.value = showTitle as NSString
+            }
+            metadata.append(subtitleItem)
+        }
+
+        proposal.metadata = metadata
+
+        // Set automatic accept delay (15 seconds countdown)
+        proposal.automaticAcceptanceInterval = 15
+
+        // Set the proposal on the player view controller
+        controller.contentProposalForCurrentTime = proposal
+
+        print("📺 [ContentProposal] Configured proposal for: \(nextEpisode.title)")
+    }
+    #endif
 
     @available(tvOS 16.0, *)
     class Coordinator: NSObject, AVPlayerViewControllerDelegate {
@@ -186,15 +258,46 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             super.init()
         }
 
-        // MARK: - Skip to Next/Previous Episode
+        // MARK: - Content Proposal Delegate Methods
 
         #if os(tvOS)
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            shouldPresentContentProposal proposal: AVContentProposal
+        ) -> Bool {
+            // Allow presenting content proposal when we have a next episode
+            let shouldPresent = playerManager.nextEpisode != nil
+            print("📺 [ContentProposal] Should present: \(shouldPresent)")
+            return shouldPresent
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            didAcceptContentProposal proposal: AVContentProposal
+        ) {
+            print("📺 [ContentProposal] User accepted - playing next episode")
+            if let nextEpisode = playerManager.nextEpisode {
+                Task { @MainActor in
+                    await playerManager.playNextEpisode(nextEpisode)
+                }
+            }
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            didRejectContentProposal proposal: AVContentProposal
+        ) {
+            print("📺 [ContentProposal] User rejected - staying on current content")
+            playerManager.cancelNextEpisode()
+        }
+
+        // MARK: - Skip to Next/Previous Episode
+
         @available(tvOS 16.0, *)
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
             skipToNextItemWithCompletion completion: @escaping (Bool) -> Void
         ) {
-            // Handle skip to next episode
             if let nextEpisode = playerManager.nextEpisode {
                 Task { @MainActor in
                     await playerManager.playNextEpisode(nextEpisode)
@@ -210,18 +313,134 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             _ playerViewController: AVPlayerViewController,
             skipToPreviousItemWithCompletion completion: @escaping (Bool) -> Void
         ) {
-            // No previous item support
+            // Could implement previous episode support here
             completion(false)
         }
         #endif
     }
 }
 
+// MARK: - Player Info View (Content Tab)
+
+struct PlayerInfoView: View {
+    let media: PlexMetadata
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Title
+                Text(displayTitle)
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                // Episode info for TV shows
+                if media.type == "episode" {
+                    if let showTitle = media.grandparentTitle {
+                        Text(showTitle)
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    }
+
+                    if let season = media.parentIndex, let episode = media.index {
+                        Text("Season \(season), Episode \(episode)")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                // Metadata row
+                HStack(spacing: 16) {
+                    if let year = media.year {
+                        Text(String(year))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let duration = media.duration {
+                        Text(formatDuration(duration))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let rating = media.contentRating {
+                        Text(rating)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.secondary.opacity(0.3))
+                            .cornerRadius(4)
+                    }
+
+                    if let audienceRating = media.audienceRating {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.yellow)
+                            Text(String(format: "%.1f", audienceRating))
+                        }
+                    }
+                }
+                .font(.subheadline)
+
+                // Synopsis
+                if let summary = media.summary {
+                    Text(summary)
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.9))
+                        .lineLimit(nil)
+                }
+
+                // Cast & Crew
+                if let roles = media.role, !roles.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Cast")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        Text(roles.prefix(5).map { $0.tag }.joined(separator: ", "))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if let directors = media.director, !directors.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Director")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        Text(directors.map { $0.tag }.joined(separator: ", "))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(40)
+        }
+        .background(Color.black)
+    }
+
+    private var displayTitle: String {
+        if media.type == "episode" {
+            return media.title
+        }
+        return media.title
+    }
+
+    private func formatDuration(_ ms: Int) -> String {
+        let mins = ms / 1000 / 60
+        let hrs = mins / 60
+        return hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
+    }
+}
+
+// MARK: - Video Player Manager
+
 @MainActor
 class VideoPlayerManager: ObservableObject {
     @Published var player: AVPlayer?
     @Published var playerViewController: AVPlayerViewController?
     @Published var isLoading = true
+    @Published var loadingMessage = "Loading video..."
     @Published var error: String?
     @Published var availableAudioTracks: [AVMediaSelectionOption] = []
     @Published var availableSubtitleTracks: [AVMediaSelectionOption] = []
@@ -231,6 +450,18 @@ class VideoPlayerManager: ObservableObject {
     @Published var showNextEpisodePrompt: Bool = false
     @Published var nextEpisodeCountdown: Int = 15
     @Published var chapters: [PlexChapter] = []
+    @Published var detailedMedia: PlexMetadata?
+    @Published var shouldShowContentProposal: Bool = false
+    @Published var playbackMethod: PlexAPIClient.PlaybackDecision.PlaybackMethod = .directPlay
+
+    // Time at which to show content proposal (30 seconds before end)
+    var contentProposalTime: CMTime {
+        guard let duration = player?.currentItem?.duration, duration.isNumeric else {
+            return .zero
+        }
+        let proposalTime = CMTimeSubtract(duration, CMTime(seconds: 30, preferredTimescale: 600))
+        return proposalTime
+    }
 
     private let media: PlexMetadata
     private var timeObserver: Any?
@@ -238,6 +469,8 @@ class VideoPlayerManager: ObservableObject {
     private var remoteCommandsConfigured = false
     private var nextEpisodeTimer: Timer?
     private var hasTriggeredNextEpisode = false
+    private var currentSessionID: String?
+    private weak var authService: PlexAuthService?
 
     init(media: PlexMetadata) {
         self.media = media
@@ -245,6 +478,8 @@ class VideoPlayerManager: ObservableObject {
     }
 
     func setupPlayer(authService: PlexAuthService) async {
+        self.authService = authService
+
         guard let client = authService.currentClient,
               let server = authService.selectedServer else {
             error = "No server connection"
@@ -260,28 +495,20 @@ class VideoPlayerManager: ObservableObject {
 
         isLoading = true
         error = nil
+        loadingMessage = "Loading video..."
 
         do {
             print("🎬 [Player] Loading video for: \(media.title)")
 
             // Get detailed metadata
             let detailedMedia = try await client.getMetadata(ratingKey: ratingKey)
+            self.detailedMedia = detailedMedia
 
             print("🎬 [Player] Detailed metadata received")
             print("🎬 [Player] Type: \(detailedMedia.type ?? "unknown")")
             print("🎬 [Player] Title: \(detailedMedia.title)")
-            print("🎬 [Player] Has media array: \(detailedMedia.media != nil)")
-            print("🎬 [Player] Media count: \(detailedMedia.media?.count ?? 0)")
-            if let media = detailedMedia.media?.first {
-                print("🎬 [Player] First media item exists")
-                print("🎬 [Player] Has part array: \(media.part != nil)")
-                print("🎬 [Player] Part count: \(media.part?.count ?? 0)")
-                if let part = media.part?.first {
-                    print("🎬 [Player] Part key: \(part.key)")
-                }
-            }
 
-            // Build video URL
+            // Build video URL with fallback strategy
             guard let mediaItem = detailedMedia.media?.first,
                   let part = mediaItem.part?.first else {
                 error = "No media available"
@@ -290,46 +517,38 @@ class VideoPlayerManager: ObservableObject {
                 return
             }
 
-            // Use the vetted baseURL from the authenticated client
-            // This is the URL that was already tested and verified to work in selectServer()
-            let baseURL = client.baseURL
+            // Get playback URL with fallback (Direct Play → Direct Stream → Transcode)
+            loadingMessage = "Checking playback compatibility..."
 
-            // Build direct play URL with token
-            var urlString = baseURL.absoluteString + part.key
-            if !urlString.contains("?") {
-                urlString += "?"
-            } else {
-                urlString += "&"
-            }
-            // Use the authenticated client's token, which is guaranteed to be valid
-            // This is the token that authenticated the current session
-            if let token = client.accessToken {
-                urlString += "X-Plex-Token=\(token)"
-            } else {
-                error = "No authentication token available"
-                isLoading = false
-                print("❌ [Player] No token found")
-                return
-            }
+            let playbackDecision = try await client.getPlaybackURL(
+                partKey: part.key,
+                mediaKey: mediaItem.id ?? "",
+                ratingKey: ratingKey,
+                duration: detailedMedia.duration
+            )
 
-            guard let videoURL = URL(string: urlString) else {
-                error = "Invalid video URL"
-                isLoading = false
-                print("❌ [Player] Invalid URL: \(urlString)")
-                return
-            }
+            self.playbackMethod = playbackDecision.method
+            self.currentSessionID = playbackDecision.sessionID
 
-            print("🎬 [Player] Video URL: \(videoURL)")
+            let methodName: String
+            switch playbackDecision.method {
+            case .directPlay: methodName = "Direct Play"
+            case .directStream: methodName = "Direct Stream"
+            case .transcode: methodName = "Transcode"
+            }
+            loadingMessage = "Starting playback (\(methodName))..."
+
+            print("🎬 [Player] Using \(methodName): \(playbackDecision.url)")
 
             // Create player item with metadata
-            let asset = AVURLAsset(url: videoURL)
+            let asset = AVURLAsset(url: playbackDecision.url)
             playerItem = AVPlayerItem(asset: asset)
 
             // Configure audio session for playback
             setupAudioSession()
 
-            // Set up metadata for Now Playing
-            setupNowPlayingMetadata(media: detailedMedia, server: server, baseURL: baseURL, token: client.accessToken)
+            // Set up metadata for Now Playing and tvOS info panel
+            setupNowPlayingMetadata(media: detailedMedia, server: server, baseURL: client.baseURL, token: client.accessToken)
 
             // Create player
             let player = AVPlayer(playerItem: playerItem)
@@ -402,15 +621,11 @@ class VideoPlayerManager: ObservableObject {
 
         // Title and subtitle for tvOS display
         if media.type == "episode" {
-            // For TV shows:
-            // Title: Show Name
-            // Subtitle: Sx, Ex - Episode Name
             if let showTitle = media.grandparentTitle {
                 nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
                 nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
             }
         } else {
-            // For movies: Title is the movie title
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
         }
 
@@ -499,7 +714,6 @@ class VideoPlayerManager: ObservableObject {
     }
 
     private func setupProgressTracking(client: PlexAPIClient, player: AVPlayer, ratingKey: String) {
-        // Update progress every 30 seconds (reduces server load while maintaining reasonable tracking)
         let interval = CMTime(seconds: 30, preferredTimescale: 600)
 
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
@@ -532,11 +746,13 @@ class VideoPlayerManager: ObservableObject {
                 }
             }
 
-            // Trigger next episode countdown when 30 seconds remaining (for TV episodes)
-            if !self.hasTriggeredNextEpisode && timeRemaining <= 30 && timeRemaining > 0 {
+            // Enable content proposal when 45 seconds remaining
+            if !self.hasTriggeredNextEpisode && timeRemaining <= 45 && timeRemaining > 0 {
                 if self.media.type == "episode" && self.nextEpisode != nil {
                     Task { @MainActor in
-                        self.startNextEpisodeCountdown()
+                        self.shouldShowContentProposal = true
+                        self.hasTriggeredNextEpisode = true
+                        print("📺 [ContentProposal] Enabled - \(Int(timeRemaining))s remaining")
                     }
                 }
             }
@@ -548,36 +764,28 @@ class VideoPlayerManager: ObservableObject {
 
         let commandCenter = MPRemoteCommandCenter.shared()
 
-        // Play command
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { _ in
             player.play()
-            print("🎮 [RemoteCommands] Play command executed")
             return .success
         }
 
-        // Pause command
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { _ in
             player.pause()
-            print("🎮 [RemoteCommands] Pause command executed")
             return .success
         }
 
-        // Toggle play/pause
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { _ in
             if player.rate > 0 {
                 player.pause()
-                print("🎮 [RemoteCommands] Toggle pause executed")
             } else {
                 player.play()
-                print("🎮 [RemoteCommands] Toggle play executed")
             }
             return .success
         }
 
-        // Skip forward (15 seconds)
         commandCenter.skipForwardCommand.isEnabled = true
         commandCenter.skipForwardCommand.preferredIntervals = [15]
         commandCenter.skipForwardCommand.addTarget { event in
@@ -585,13 +793,11 @@ class VideoPlayerManager: ObservableObject {
                 let currentTime = player.currentTime()
                 let newTime = CMTimeAdd(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
                 player.seek(to: newTime)
-                print("🎮 [RemoteCommands] Skip forward \(skipEvent.interval)s")
                 return .success
             }
             return .commandFailed
         }
 
-        // Skip backward (15 seconds)
         commandCenter.skipBackwardCommand.isEnabled = true
         commandCenter.skipBackwardCommand.preferredIntervals = [15]
         commandCenter.skipBackwardCommand.addTarget { event in
@@ -599,7 +805,6 @@ class VideoPlayerManager: ObservableObject {
                 let currentTime = player.currentTime()
                 let newTime = CMTimeSubtract(currentTime, CMTime(seconds: skipEvent.interval, preferredTimescale: 600))
                 player.seek(to: max(newTime, CMTime.zero))
-                print("🎮 [RemoteCommands] Skip backward \(skipEvent.interval)s")
                 return .success
             }
             return .commandFailed
@@ -620,125 +825,57 @@ class VideoPlayerManager: ObservableObject {
         commandCenter.skipBackwardCommand.removeTarget(nil)
 
         remoteCommandsConfigured = false
-        print("🎮 [RemoteCommands] Remote commands removed")
     }
 
     // MARK: - Audio & Subtitle Track Management
 
-    /// Discover available audio and subtitle tracks from the player item
     private func discoverTracks() {
-        guard let playerItem = playerItem else {
-            print("⚠️ [Tracks] No player item available")
-            return
-        }
+        guard let playerItem = playerItem else { return }
 
-        // Get audio tracks
         if let audioGroup = playerItem.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) {
             availableAudioTracks = audioGroup.options
             currentAudioTrack = playerItem.selectedMediaOption(in: audioGroup)
-
             print("🎵 [Tracks] Found \(availableAudioTracks.count) audio tracks")
-            for (index, track) in availableAudioTracks.enumerated() {
-                let language = track.locale?.identifier ?? "unknown"
-                let title = track.displayName
-                let selected = track == currentAudioTrack ? "✓" : " "
-                print("🎵 [Tracks]   [\(selected)] \(index): \(title) (\(language))")
-            }
         }
 
-        // Get subtitle tracks
         if let subtitleGroup = playerItem.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) {
             availableSubtitleTracks = subtitleGroup.options
             currentSubtitleTrack = playerItem.selectedMediaOption(in: subtitleGroup)
-
             print("📝 [Tracks] Found \(availableSubtitleTracks.count) subtitle tracks")
-            for (index, track) in availableSubtitleTracks.enumerated() {
-                let language = track.locale?.identifier ?? "unknown"
-                let title = track.displayName
-                let selected = track == currentSubtitleTrack ? "✓" : " "
-                print("📝 [Tracks]   [\(selected)] \(index): \(title) (\(language))")
-            }
         }
     }
 
-    /// Select an audio track
     func selectAudioTrack(_ track: AVMediaSelectionOption?) {
         guard let playerItem = playerItem,
-              let audioGroup = playerItem.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else {
-            print("⚠️ [Tracks] Cannot select audio track - no audio group")
-            return
-        }
-
+              let audioGroup = playerItem.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return }
         playerItem.select(track, in: audioGroup)
         currentAudioTrack = track
-
-        if let track = track {
-            print("🎵 [Tracks] Selected audio track: \(track.displayName)")
-        } else {
-            print("🎵 [Tracks] Disabled audio track")
-        }
     }
 
-    /// Select a subtitle track
     func selectSubtitleTrack(_ track: AVMediaSelectionOption?) {
         guard let playerItem = playerItem,
-              let subtitleGroup = playerItem.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
-            print("⚠️ [Tracks] Cannot select subtitle track - no subtitle group")
-            return
-        }
-
+              let subtitleGroup = playerItem.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return }
         playerItem.select(track, in: subtitleGroup)
         currentSubtitleTrack = track
-
-        if let track = track {
-            print("📝 [Tracks] Selected subtitle track: \(track.displayName)")
-        } else {
-            print("📝 [Tracks] Disabled subtitles")
-        }
     }
 
-    /// Select audio track by language code (e.g., "en", "es", "fr")
-    func selectAudioTrackByLanguage(_ languageCode: String) {
-        let matchingTrack = availableAudioTracks.first { track in
-            track.locale?.languageCode == languageCode
-        }
-        selectAudioTrack(matchingTrack)
-    }
+    // MARK: - Next Episode
 
-    /// Select subtitle track by language code
-    func selectSubtitleTrackByLanguage(_ languageCode: String) {
-        let matchingTrack = availableSubtitleTracks.first { track in
-            track.locale?.languageCode == languageCode
-        }
-        selectSubtitleTrack(matchingTrack)
-    }
-
-    // MARK: - Next Episode Auto-Play
-
-    /// Fetch the next episode for TV shows
     func fetchNextEpisode(client: PlexAPIClient) async {
-        // Only fetch for TV episodes
         guard media.type == "episode",
               let grandparentRatingKey = media.grandparentRatingKey,
               let parentRatingKey = media.parentRatingKey,
-              let currentIndex = media.index else {
-            print("📺 [NextEp] Not an episode or missing hierarchy info")
-            return
-        }
+              let currentIndex = media.index else { return }
 
         do {
-            // Get all episodes in the current season
             let seasonEpisodes = try await client.getChildren(ratingKey: parentRatingKey)
 
-            // Find the next episode
             if let nextEp = seasonEpisodes.first(where: { $0.index == currentIndex + 1 }) {
                 self.nextEpisode = nextEp
-                print("📺 [NextEp] Found next episode: \(nextEp.title) (S\(nextEp.parentIndex ?? 0)E\(nextEp.index ?? 0))")
+                print("📺 [NextEp] Found next episode: \(nextEp.title)")
             } else {
-                // No more episodes in this season, try to get next season
-                print("📺 [NextEp] No more episodes in season, checking for next season")
+                // Try next season
                 let allSeasons = try await client.getChildren(ratingKey: grandparentRatingKey)
-
                 if let currentSeasonIndex = media.parentIndex,
                    let nextSeason = allSeasons.first(where: { $0.index == currentSeasonIndex + 1 }),
                    let nextSeasonKey = nextSeason.ratingKey {
@@ -754,82 +891,42 @@ class VideoPlayerManager: ObservableObject {
         }
     }
 
-    /// Start the next episode countdown
-    func startNextEpisodeCountdown() {
-        guard nextEpisode != nil else { return }
-
-        print("📺 [NextEp] Starting countdown")
-        showNextEpisodePrompt = true
-        nextEpisodeCountdown = 15
-        hasTriggeredNextEpisode = true
-
-        // Cancel any existing timer
-        nextEpisodeTimer?.invalidate()
-
-        // Start countdown timer
-        nextEpisodeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-
-            // All UI updates must happen on main thread
-            DispatchQueue.main.async {
-                self.nextEpisodeCountdown -= 1
-
-                if self.nextEpisodeCountdown <= 0 {
-                    self.nextEpisodeTimer?.invalidate()
-                    self.nextEpisodeTimer = nil
-                    self.showNextEpisodePrompt = false
-                    print("📺 [NextEp] Countdown complete - should play next episode")
-                }
-            }
-        }
-    }
-
-    /// Cancel the next episode auto-play
     func cancelNextEpisode() {
-        print("📺 [NextEp] Cancelled by user")
         nextEpisodeTimer?.invalidate()
         nextEpisodeTimer = nil
         showNextEpisodePrompt = false
-        nextEpisodeCountdown = 15
+        shouldShowContentProposal = false
     }
 
-    // MARK: - Chapter Markers
+    func playNextEpisode(_ episode: PlexMetadata) async {
+        print("📺 [NextEp] Playing next episode: \(episode.title)")
+        showNextEpisodePrompt = false
+        shouldShowContentProposal = false
+        // Note: The view layer handles dismissing and presenting new VideoPlayerView
+    }
 
-    /// Fetch chapters from Plex API
+    // MARK: - Chapters
+
     func fetchChapters(client: PlexAPIClient, ratingKey: String) async {
         do {
             let fetchedChapters = try await client.getChapters(ratingKey: ratingKey)
             self.chapters = fetchedChapters
             print("📖 [Chapters] Loaded \(fetchedChapters.count) chapters")
-            for (index, chapter) in fetchedChapters.enumerated() {
-                let title = chapter.title ?? "Chapter \(index + 1)"
-                let time = Int(chapter.startTime)
-                print("📖 [Chapters]   \(index + 1): \(title) @ \(time)s")
-            }
         } catch {
             print("⚠️ [Chapters] Failed to fetch chapters: \(error)")
         }
     }
 
-    /// Configure chapter markers on the player item for tvOS
     private func configureChapterMarkers() {
-        guard !chapters.isEmpty, let playerItem = playerItem else {
-            print("📖 [Chapters] No chapters to configure")
-            return
-        }
+        guard !chapters.isEmpty, let playerItem = playerItem else { return }
 
         #if os(tvOS)
-        // Create navigation markers for tvOS
         var markers: [AVNavigationMarkersGroup] = []
 
-        // Create time markers for each chapter
         let timeMarkers = chapters.map { chapter -> AVTimedMetadataGroup in
             let time = CMTime(seconds: chapter.startTime, preferredTimescale: 600)
-
-            // Create metadata items for the chapter
             var items: [AVMetadataItem] = []
 
-            // Add title
             if let title = chapter.title {
                 let titleItem = AVMutableMetadataItem()
                 titleItem.identifier = .commonIdentifierTitle
@@ -838,73 +935,37 @@ class VideoPlayerManager: ObservableObject {
                 items.append(titleItem)
             }
 
-            // Add artwork if available
-            if let thumbPath = chapter.thumb,
-               let _ = playerViewController?.player?.currentItem?.accessLog()?.description,
-               let _ = URL(string: thumbPath) {
-                let artworkItem = AVMutableMetadataItem()
-                artworkItem.identifier = .commonIdentifierArtwork
-                // Note: Would need to fetch image data for full implementation
-                items.append(artworkItem)
-            }
-
             return AVTimedMetadataGroup(items: items, timeRange: CMTimeRange(start: time, duration: .zero))
         }
 
-        // Create chapter metadata group
-        let chapterGroup = AVNavigationMarkersGroup(
-            title: nil,
-            timedNavigationMarkers: timeMarkers
-        )
-
+        let chapterGroup = AVNavigationMarkersGroup(title: nil, timedNavigationMarkers: timeMarkers)
         markers.append(chapterGroup)
 
-        // Set the markers on the player item
         if #available(tvOS 16.0, *) {
             playerItem.navigationMarkerGroups = markers
             print("📖 [Chapters] Configured \(chapters.count) chapter markers")
-        } else {
-            print("⚠️ [Chapters] Chapter markers require tvOS 16.0+")
         }
-        #else
-        print("⚠️ [Chapters] Chapter markers only supported on tvOS")
         #endif
     }
 
-    /// Jump to a specific chapter
-    func jumpToChapter(_ chapter: PlexChapter) {
-        guard let player = player else { return }
+    // MARK: - Skip Intro
 
-        let time = CMTime(seconds: chapter.startTime, preferredTimescale: 600)
-        Task {
-            await player.seek(to: time)
-            print("📖 [Chapters] Jumped to chapter: \(chapter.title ?? "Untitled")")
-        }
-    }
-
-    // MARK: - Skip Intro (tvOS 16.0+)
-
-    /// Configure skip intro using interstitial time ranges
     @available(tvOS 16.0, *)
     private func configureSkipIntro(for ratingKey: String, client: PlexAPIClient) async {
         do {
-            // Fetch skip intro data from Plex
             let markers = try await client.getMediaMarkers(ratingKey: ratingKey)
 
-            // Find intro marker
             if let introMarker = markers.first(where: { $0.type == "intro" }) {
                 let startTime = CMTime(seconds: introMarker.start, preferredTimescale: 600)
                 let endTime = CMTime(seconds: introMarker.end, preferredTimescale: 600)
                 let duration = CMTimeSubtract(endTime, startTime)
-
                 let timeRange = CMTimeRange(start: startTime, duration: duration)
 
-                // Create interstitial time range for skip intro
                 #if os(tvOS)
                 if let playerItem = self.playerItem {
                     let interstitial = AVInterstitialTimeRange(timeRange: timeRange)
                     playerItem.interstitialTimeRanges = [interstitial]
-                    print("⏩ [SkipIntro] Configured skip intro at \(introMarker.start)s - \(introMarker.end)s")
+                    print("⏩ [SkipIntro] Configured at \(introMarker.start)s - \(introMarker.end)s")
                 }
                 #endif
             }
@@ -913,22 +974,23 @@ class VideoPlayerManager: ObservableObject {
         }
     }
 
-    /// Play the next episode
-    func playNextEpisode(_ episode: PlexMetadata) async {
-        print("📺 [NextEp] Playing next episode: \(episode.title)")
-        // Note: This requires re-initializing the player with new media
-        // The view layer will handle dismissing and presenting new VideoPlayerView
-        showNextEpisodePrompt = false
-    }
+    // MARK: - Cleanup
 
     func cleanup() {
         print("🧹 [Player] Cleaning up player resources")
 
-        // Cancel next episode timer
+        // Stop transcode session if active
+        if let sessionID = currentSessionID, playbackMethod == .transcode || playbackMethod == .directStream {
+            if let client = authService?.currentClient {
+                Task {
+                    await client.stopTranscode(sessionID: sessionID)
+                }
+            }
+        }
+
         nextEpisodeTimer?.invalidate()
         nextEpisodeTimer = nil
 
-        // Remove remote command handlers
         removeRemoteCommands()
 
         if let timeObserver = timeObserver {
@@ -940,11 +1002,9 @@ class VideoPlayerManager: ObservableObject {
         player = nil
         playerItem = nil
 
-        // Deactivate audio session
         #if os(tvOS)
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            print("🔊 [Player] Audio session deactivated")
         } catch {
             print("⚠️ [Player] Failed to deactivate audio session: \(error)")
         }
@@ -952,110 +1012,7 @@ class VideoPlayerManager: ObservableObject {
     }
 }
 
-// MARK: - Next Episode Overlay
-
-struct NextEpisodeOverlay: View {
-    let nextEpisode: PlexMetadata
-    let countdown: Int
-    let onPlayNow: () -> Void
-    let onCancel: () -> Void
-    @EnvironmentObject var authService: PlexAuthService
-
-    var body: some View {
-        VStack {
-            Spacer()
-
-            // Bottom overlay
-            HStack(spacing: 30) {
-                // Thumbnail
-                CachedAsyncImage(url: thumbnailURL) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(16/9, contentMode: .fill)
-                } placeholder: {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .aspectRatio(16/9, contentMode: .fill)
-                        .overlay(
-                            Image(systemName: "tv")
-                                .font(.largeTitle)
-                                .foregroundColor(.gray)
-                        )
-                }
-                .frame(width: 280, height: 158)
-                .cornerRadius(DesignTokens.cornerRadiusSmall)
-
-                // Info
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Next Episode")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-
-                    Text(nextEpisode.title)
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-
-                    if let showTitle = nextEpisode.grandparentTitle {
-                        Text("\(showTitle) • \(nextEpisode.formatSeasonEpisode())")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                }
-
-                Spacer()
-
-                // Countdown and buttons
-                VStack(spacing: 15) {
-                    Text("Playing in \(countdown)s")
-                        .font(.title3)
-                        .foregroundColor(.white)
-
-                    HStack(spacing: 15) {
-                        Button {
-                            onPlayNow()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "play.fill")
-                                Text("Play Now")
-                            }
-                            .font(.headline)
-                        }
-                        .buttonStyle(ClearGlassButtonStyle())
-
-                        Button {
-                            onCancel()
-                        } label: {
-                            Text("Cancel")
-                                .font(.headline)
-                        }
-                        .buttonStyle(CardButtonStyle())
-                    }
-                }
-            }
-            .padding(40)
-            .background(.ultraThinMaterial)
-            .cornerRadius(DesignTokens.cornerRadiusXLarge)
-            .shadow(radius: 20)
-            .padding(60)
-        }
-    }
-
-    private var thumbnailURL: URL? {
-        guard let client = authService.currentClient,
-              let thumb = nextEpisode.thumb else {
-            return nil
-        }
-
-        // Use the vetted baseURL and token from the authenticated client
-        var urlString = client.baseURL.absoluteString + thumb
-        if let token = client.accessToken {
-            urlString += "?X-Plex-Token=\(token)"
-        }
-
-        return URL(string: urlString)
-    }
-}
+// MARK: - Preview
 
 #Preview {
     VideoPlayerView(media: PlexMetadata(
