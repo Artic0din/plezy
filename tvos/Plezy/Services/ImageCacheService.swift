@@ -9,6 +9,7 @@
 import SwiftUI
 import Combine
 import ImageIO
+import CryptoKit
 
 /// Manages in-memory and disk-based image caching
 /// Optimized for tvOS with aggressive memory management and image downsampling
@@ -328,11 +329,12 @@ class ImageCacheService {
 // MARK: - String MD5 Extension
 
 extension String {
+    /// Compute a stable MD5 hash that persists across app launches
+    /// Note: String.hashValue is NOT stable across launches due to hash randomization
     var md5Hash: String {
-        // Simple hash function for filename generation
-        // Using hashValue is platform-specific but good enough for cache keys
-        let hash = abs(self.hashValue)
-        return "\(hash)"
+        let data = Data(self.utf8)
+        let hash = Insecure.MD5.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
     }
 }
 
