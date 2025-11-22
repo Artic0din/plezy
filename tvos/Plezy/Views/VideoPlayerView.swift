@@ -767,20 +767,22 @@ class VideoPlayerManager: ObservableObject {
         nextEpisodeTimer?.invalidate()
 
         // Start countdown timer
-        nextEpisodeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            guard let self = self else {
-                timer.invalidate()
-                return
+        nextEpisodeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+
+            // Decrement and check on the timer's thread
+            let shouldComplete: Bool
+            DispatchQueue.main.sync {
+                self.nextEpisodeCountdown -= 1
+                shouldComplete = self.nextEpisodeCountdown <= 0
             }
 
-            Task { @MainActor in
-                self.nextEpisodeCountdown -= 1
-
-                if self.nextEpisodeCountdown <= 0 {
-                    timer.invalidate()
+            if shouldComplete {
+                // Invalidate timer and update UI on main thread
+                DispatchQueue.main.async {
+                    self.nextEpisodeTimer?.invalidate()
+                    self.nextEpisodeTimer = nil
                     self.showNextEpisodePrompt = false
-                    // Trigger next episode play
-                    // Note: This will be handled by the view layer
                     print("📺 [NextEp] Countdown complete - should play next episode")
                 }
             }
