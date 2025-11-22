@@ -71,25 +71,23 @@ struct MediaDetailView: View {
         }
     }
 
-    // BACKGROUND LAYER: Full-screen, NO rounded corners, NO card styling
+    // BACKGROUND LAYER: Black with gradient from bottom
     private var backgroundLayer: some View {
         ZStack {
-            // Solid black base
             Color.black
                 .ignoresSafeArea()
 
-            // Dimmed artwork overlay (NOT a card, just a background image)
-            if let url = artworkURL(for: displayMedia.art) {
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Color.black
-                }
-                .ignoresSafeArea()
-                .opacity(0.12)
-            }
+            // Gradient from bottom
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(0.3),
+                    Color.black.opacity(0.6)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
         }
     }
 
