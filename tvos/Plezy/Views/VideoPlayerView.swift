@@ -242,8 +242,8 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         // Set automatic accept delay (15 seconds countdown)
         proposal.automaticAcceptanceInterval = 15
 
-        // Set the proposal on the player view controller
-        controller.nextContentProposal = proposal
+        // Set the proposal on the current player item (not the controller)
+        controller.player?.currentItem?.nextContentProposal = proposal
 
         print("📺 [ContentProposal] Configured proposal for: \(nextEpisode.title)")
     }
