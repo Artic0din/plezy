@@ -343,13 +343,20 @@ class PlexAPIClient {
         // Fetch all show/movie metadata in parallel using TaskGroup
         var logoCache: [String: String?] = [:]
 
+        // Helper to extract clearLogo from metadata (avoids actor isolation issues in task group)
+        func extractClearLogo(from metadata: PlexMetadata) -> String? {
+            metadata.Image?.first(where: { $0.type == "clearLogo" })?.url
+        }
+
         await withTaskGroup(of: (String, String?).self) { group in
             // Add tasks for shows
             for showKey in showKeysToFetch {
                 group.addTask {
                     do {
                         let metadata = try await self.getMetadata(ratingKey: showKey)
-                        return (showKey, metadata.clearLogo)
+                        // Extract logo inline to avoid actor isolation issues with computed property
+                        let logo = metadata.Image?.first(where: { $0.type == "clearLogo" })?.url
+                        return (showKey, logo)
                     } catch {
                         return (showKey, nil)
                     }
@@ -361,7 +368,9 @@ class PlexAPIClient {
                 group.addTask {
                     do {
                         let metadata = try await self.getMetadata(ratingKey: movieKey)
-                        return (movieKey, metadata.clearLogo)
+                        // Extract logo inline to avoid actor isolation issues with computed property
+                        let logo = metadata.Image?.first(where: { $0.type == "clearLogo" })?.url
+                        return (movieKey, logo)
                     } catch {
                         return (movieKey, nil)
                     }
