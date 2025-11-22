@@ -770,16 +770,11 @@ class VideoPlayerManager: ObservableObject {
         nextEpisodeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
-            // Decrement and check on the timer's thread
-            let shouldComplete: Bool
-            DispatchQueue.main.sync {
+            // All UI updates must happen on main thread
+            DispatchQueue.main.async {
                 self.nextEpisodeCountdown -= 1
-                shouldComplete = self.nextEpisodeCountdown <= 0
-            }
 
-            if shouldComplete {
-                // Invalidate timer and update UI on main thread
-                DispatchQueue.main.async {
+                if self.nextEpisodeCountdown <= 0 {
                     self.nextEpisodeTimer?.invalidate()
                     self.nextEpisodeTimer = nil
                     self.showNextEpisodePrompt = false
