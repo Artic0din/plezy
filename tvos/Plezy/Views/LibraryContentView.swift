@@ -201,6 +201,23 @@ struct LibraryContentView: View {
                     print("📱 [LibraryContent] MediaDetailView appeared for: \(media.title)")
                 }
         }
+        .onChange(of: selectedMedia) { oldValue, newValue in
+            // Refresh content when returning from media detail (watch status may have changed)
+            if oldValue != nil && newValue == nil {
+                print("📚 [LibraryContent] Returned from media detail, refreshing content...")
+                Task {
+                    await refreshContent()
+                }
+            }
+        }
+    }
+
+    /// Refresh content by invalidating cache and reloading
+    private func refreshContent() async {
+        guard let serverID = authService.selectedServer?.clientIdentifier else { return }
+        let cacheKey = CacheService.libraryContentKey(serverID: serverID, libraryKey: library.key)
+        cache.invalidate(cacheKey)
+        await loadContent()
     }
 
     private func loadContent() async {
