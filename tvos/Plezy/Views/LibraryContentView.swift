@@ -337,52 +337,13 @@ struct FilterButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-    @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 20, weight: .semibold, design: .default))
-                .foregroundStyle(isSelected ? .black : .white)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 14)
-                .background(
-                    ZStack {
-                        if isSelected {
-                            // Selected state with Liquid Glass
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium, style: .continuous)
-                                .fill(.white)
-                        } else {
-                            // Unselected state with subtle material
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium, style: .continuous)
-                                .fill(.regularMaterial.opacity(DesignTokens.materialOpacitySubtle))
-                        }
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium, style: .continuous)
-                        .strokeBorder(
-                            isFocused && !isSelected ? Color.white.opacity(0.5) : Color.clear,
-                            lineWidth: 2
-                        )
-                )
         }
-        .buttonStyle(FilterButtonStyle(isFocused: $isFocused, isSelected: isSelected))
-    }
-}
-
-/// Button style for filter buttons with Apple's focus handling
-/// Focus state is tracked for visual styling only - Apple handles focus behavior
-struct FilterButtonStyle: ButtonStyle {
-    let isFocused: FocusState<Bool>.Binding
-    let isSelected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .focused(isFocused)
-            .focusable()
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(DesignTokens.Animation.quick.spring(), value: configuration.isPressed)
+        .buttonStyle(isSelected ? .borderedProminent : .bordered)
     }
 }
 

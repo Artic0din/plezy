@@ -487,15 +487,14 @@ struct MediaDetailContent: View {
                 }
                 .foregroundColor(.white)
             }
-            .buttonStyle(.clearGlass)
+            .buttonStyle(.borderedProminent)
 
             if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
                     Image(systemName: "shuffle.circle.fill")
                         .font(.system(size: 24))
-                        .foregroundColor(.white)
                 }
-                .buttonStyle(CardButtonStyle())
+                .buttonStyle(.bordered)
             }
 
             if media.type == "movie" && !trailers.isEmpty {
@@ -505,9 +504,8 @@ struct MediaDetailContent: View {
                         Text("Trailer")
                     }
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.white)
                 }
-                .buttonStyle(CardButtonStyle())
+                .buttonStyle(.bordered)
             }
 
             // Watch/Unwatch button for movies
@@ -741,8 +739,7 @@ struct EpisodeThumbnail: View {
             y: isFocused ? 10 : 4
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
-        // Use MediaCardButtonStyle to avoid system focus backgrounds
-        .buttonStyle(MediaCardButtonStyle())
+        .buttonStyle(.plain)
         .focused($isFocused)
         .onChange(of: isFocused) { _, focused in
             onFocusChange(focused)
@@ -801,16 +798,14 @@ struct WatchStatusButton: View {
                 if isUpdating {
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(.white)
                 } else {
                     Image(systemName: isWatched ? "eye.slash.fill" : "eye.fill")
                 }
                 Text(isWatched ? "Unwatch" : "Watch")
             }
             .font(.system(size: 16, weight: .medium))
-            .foregroundColor(.white)
         }
-        .buttonStyle(CardButtonStyle())
+        .buttonStyle(.bordered)
         .disabled(isUpdating)
     }
 

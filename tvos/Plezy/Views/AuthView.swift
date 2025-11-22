@@ -79,10 +79,8 @@ struct AuthView: View {
                             Text("Sign in with Plex")
                         }
                         .font(.title2)
-                        .padding(.horizontal, 60)
-                        .padding(.vertical, 20)
                     }
-                    .buttonStyle(CardButtonStyle())
+                    .buttonStyle(.borderedProminent)
                 }
 
                 if let error = authService.error {

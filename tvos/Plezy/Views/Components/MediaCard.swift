@@ -128,7 +128,7 @@ struct MediaCard: View {
 
                     // Layer 3: Logo/Title overlay (if enabled and inside)
                     if config.showLogo && config.showLabel == .inside {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 0) {
                             Spacer()
 
                             // Logo or title
@@ -153,30 +153,6 @@ struct MediaCard: View {
                                 }
                                 Spacer()
                             }
-
-                            // Metadata line: Type • Rating • Genre
-                            HStack(spacing: 6) {
-                                Text(media.type == "movie" ? "Movie" : "TV Show")
-                                    .font(.system(size: config.width * 0.038, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.85))
-
-                                if let contentRating = media.contentRating {
-                                    Text("•")
-                                        .foregroundColor(.white.opacity(0.6))
-                                    Text(cleanedContentRating(contentRating))
-                                        .font(.system(size: config.width * 0.038, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.85))
-                                }
-
-                                if let genres = media.genre, let firstGenre = genres.first {
-                                    Text("•")
-                                        .foregroundColor(.white.opacity(0.6))
-                                    Text(firstGenre.tag)
-                                        .font(.system(size: config.width * 0.038, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.85))
-                                }
-                            }
-                            .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
                         }
                         .padding(.leading, config.width * 0.05)
                         .padding(.bottom, config.showProgress ? config.height * 0.12 : config.height * 0.06)
@@ -184,23 +160,20 @@ struct MediaCard: View {
 
                     // Layer 4: Progress bar overlay (if enabled)
                     if config.showProgress && media.progress > 0 && media.progress < 0.98 {
-                        VStack(spacing: 0) {
+                        VStack {
                             Spacer()
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    // Background capsule
-                                    Capsule()
-                                        .fill(.white.opacity(0.3))
-                                        .frame(height: 6)
+                            ZStack(alignment: .leading) {
+                                // Background capsule - full width
+                                Capsule()
+                                    .fill(.white.opacity(0.3))
+                                    .frame(width: config.width - 24, height: 6)
 
-                                    // Progress capsule
-                                    Capsule()
-                                        .fill(Color.beaconGradient)
-                                        .frame(width: geo.size.width * media.progress, height: 6)
-                                        .shadow(color: Color.beaconMagenta.opacity(0.6), radius: 4, x: 0, y: 0)
-                                }
+                                // Progress capsule - proportional width
+                                Capsule()
+                                    .fill(Color.beaconGradient)
+                                    .frame(width: (config.width - 24) * media.progress, height: 6)
+                                    .shadow(color: Color.beaconMagenta.opacity(0.6), radius: 4, x: 0, y: 0)
                             }
-                            .frame(height: 6)
                             .padding(.horizontal, 12)
                             .padding(.bottom, 12)
                         }
@@ -253,7 +226,7 @@ struct MediaCard: View {
         }
         .scaleEffect(isFocused ? CardRowLayout.focusScale : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
-        .buttonStyle(MediaCardButtonStyle())
+        .buttonStyle(.plain)
         .focused($isFocused)
         .onPlayPauseCommand {
             action()
@@ -290,11 +263,6 @@ struct MediaCard: View {
             }
             return label
         }
-    }
-
-    /// Clean content rating by removing regional suffixes like "/au"
-    private func cleanedContentRating(_ rating: String) -> String {
-        rating.replacingOccurrences(of: "/au", with: "", options: .caseInsensitive)
     }
 
     private var artURL: URL? {

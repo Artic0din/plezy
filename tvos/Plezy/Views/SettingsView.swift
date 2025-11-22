@@ -172,11 +172,10 @@ struct SettingsView: View {
                             Text("Sign Out")
                                 .font(.headline)
                         }
-                        .foregroundColor(.red)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
                     }
-                    .buttonStyle(CardButtonStyle())
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                     .padding(.top, 20)
                 }
                 .padding(.horizontal, 80)

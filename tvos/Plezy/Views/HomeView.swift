@@ -244,10 +244,8 @@ struct HomeView: View {
                     Text("Select Server")
                 }
                 .font(.title2)
-                .padding(.horizontal, 60)
-                .padding(.vertical, 20)
             }
-            .buttonStyle(CardButtonStyle())
+            .buttonStyle(.borderedProminent)
         }
     }
 

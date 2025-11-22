@@ -45,7 +45,7 @@ struct ServerSelectionView: View {
                                 await authService.loadServers()
                             }
                         }
-                        .buttonStyle(CardButtonStyle())
+                        .buttonStyle(.bordered)
                     }
                 } else {
                     ScrollView {
