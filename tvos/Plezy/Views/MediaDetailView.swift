@@ -40,38 +40,29 @@ struct MediaDetailView: View {
     private let cardPadding: CGFloat = 48
 
     var body: some View {
-        // ROOT: GeometryReader to properly center card on screen
-        GeometryReader { geometry in
-            ZStack {
-                // LAYER 1: Full-screen dimmed backdrop
-                // This is NOT a card - just a flat background with no rounded corners
-                backgroundLayer
+        ZStack {
+            // LAYER 1: Full-screen dimmed backdrop (no rounded corners)
+            backgroundLayer
 
-                // LAYER 2: The ONE and ONLY card - centered on screen
-                ShowDetailCard(
-                    media: displayMedia,
-                    seasons: seasons,
-                    allEpisodes: allEpisodes,
-                    selectedSeason: $selectedSeason,
-                    focusedEpisode: $focusedEpisode,
-                    onDeckEpisode: onDeckEpisode,
-                    trailers: trailers,
-                    onPlay: handlePlay,
-                    onPlayEpisode: { episode in playMedia = episode },
-                    cardWidth: cardWidth,
-                    cardHeight: cardHeight,
-                    cardCornerRadius: cardCornerRadius,
-                    cardPadding: cardPadding
-                )
-                .environmentObject(authService)
-                // Center the card in available space
-                .frame(width: cardWidth, height: cardHeight)
-                .position(
-                    x: geometry.size.width / 2,
-                    y: geometry.size.height / 2
-                )
-            }
+            // LAYER 2: The ONE and ONLY card - centered
+            ShowDetailCard(
+                media: displayMedia,
+                seasons: seasons,
+                allEpisodes: allEpisodes,
+                selectedSeason: $selectedSeason,
+                focusedEpisode: $focusedEpisode,
+                onDeckEpisode: onDeckEpisode,
+                trailers: trailers,
+                onPlay: handlePlay,
+                onPlayEpisode: { episode in playMedia = episode },
+                cardWidth: cardWidth,
+                cardHeight: cardHeight,
+                cardCornerRadius: cardCornerRadius,
+                cardPadding: cardPadding
+            )
+            .environmentObject(authService)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .task { await loadDetails() }
         .fullScreenCover(item: $playMedia) { media in
