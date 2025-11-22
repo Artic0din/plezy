@@ -416,8 +416,8 @@ struct ShowDetailCard: View {
 
             if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
-                    Image(systemName: "shuffle")
-                        .font(.system(size: 18))
+                    Image(systemName: "shuffle.circle.fill")
+                        .font(.system(size: 24))
                         .foregroundColor(.white)
                 }
                 .buttonStyle(CardButtonStyle())
@@ -426,13 +426,19 @@ struct ShowDetailCard: View {
             if media.type == "movie" && !trailers.isEmpty {
                 Button(action: {}) {
                     HStack(spacing: 6) {
-                        Image(systemName: "play.rectangle")
+                        Image(systemName: "film.stack.fill")
                         Text("Trailer")
                     }
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.white)
                 }
                 .buttonStyle(CardButtonStyle())
+            }
+
+            // Watch/Unwatch button for movies
+            if media.type == "movie" {
+                WatchStatusButton(media: media)
+                    .environmentObject(authService)
             }
         }
     }
@@ -692,6 +698,63 @@ struct ProgressBar: View {
                     .fill(Color.beaconPurple)
                     .frame(width: geo.size.width * progress)
             }
+        }
+    }
+}
+
+// MARK: - Watch Status Button
+
+struct WatchStatusButton: View {
+    let media: PlexMetadata
+    @EnvironmentObject var authService: PlexAuthService
+    @State private var isWatched: Bool
+    @State private var isUpdating = false
+
+    init(media: PlexMetadata) {
+        self.media = media
+        self._isWatched = State(initialValue: media.isWatched)
+    }
+
+    var body: some View {
+        Button {
+            guard !isUpdating else { return }
+            Task {
+                await toggleWatched()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if isUpdating {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                } else {
+                    Image(systemName: isWatched ? "eye.slash.fill" : "eye.fill")
+                }
+                Text(isWatched ? "Unwatch" : "Watch")
+            }
+            .font(.system(size: 16, weight: .medium))
+            .foregroundColor(.white)
+        }
+        .buttonStyle(CardButtonStyle())
+        .disabled(isUpdating)
+    }
+
+    private func toggleWatched() async {
+        guard let client = authService.currentClient,
+              let ratingKey = media.ratingKey else { return }
+
+        isUpdating = true
+        defer { isUpdating = false }
+
+        do {
+            if isWatched {
+                try await client.unscrobble(ratingKey: ratingKey)
+            } else {
+                try await client.scrobble(ratingKey: ratingKey)
+            }
+            isWatched.toggle()
+        } catch {
+            print("Error toggling watched status: \(error)")
         }
     }
 }

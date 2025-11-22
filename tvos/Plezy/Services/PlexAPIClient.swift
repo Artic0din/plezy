@@ -409,14 +409,21 @@ class PlexAPIClient {
 
         // The /hubs/search endpoint returns Hub objects with nested metadata
         // Extract metadata from each hub and filter for movies, shows, and episodes
+        // Deduplicate by ratingKey since same items can appear in multiple hubs
         var results: [PlexMetadata] = []
+        var seenRatingKeys = Set<String>()
         let validTypes = Set(["movie", "show", "episode"])
 
         if let hubs = response.MediaContainer.hub {
             for hub in hubs {
                 // Only include hubs with valid media types
                 if validTypes.contains(hub.type), let metadata = hub.metadata {
-                    results.append(contentsOf: metadata)
+                    for item in metadata {
+                        if let ratingKey = item.ratingKey, !seenRatingKeys.contains(ratingKey) {
+                            seenRatingKeys.insert(ratingKey)
+                            results.append(item)
+                        }
+                    }
                 }
             }
         }
