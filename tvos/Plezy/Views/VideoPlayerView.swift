@@ -471,6 +471,13 @@ class VideoPlayerManager: ObservableObject {
     private var hasTriggeredNextEpisode = false
     private var currentSessionID: String?
     private weak var authService: PlexAuthService?
+    private var statusObservation: NSKeyValueObservation?
+    private var errorObservation: NSKeyValueObservation?
+    private var hasAttemptedFallback = false
+    private var currentPartKey: String?
+    private var currentRatingKey: String?
+    private var currentMediaKey: String?
+    private var savedViewOffset: Int?
 
     init(media: PlexMetadata) {
         self.media = media
@@ -517,6 +524,12 @@ class VideoPlayerManager: ObservableObject {
                 return
             }
 
+            // Store for potential fallback
+            self.currentPartKey = part.key
+            self.currentRatingKey = ratingKey
+            self.currentMediaKey = String(mediaItem.id)
+            self.savedViewOffset = detailedMedia.viewOffset
+
             // Get playback URL with fallback (Direct Play → Direct Stream → Transcode)
             loadingMessage = "Checking playback compatibility..."
 
@@ -549,6 +562,9 @@ class VideoPlayerManager: ObservableObject {
 
             // Set up metadata for Now Playing and tvOS info panel
             setupNowPlayingMetadata(media: detailedMedia, server: server, baseURL: client.baseURL, token: client.accessToken)
+
+            // Observe player item status for playback errors (to trigger fallback)
+            setupPlayerItemObservers()
 
             // Create player
             let player = AVPlayer(playerItem: playerItem)
@@ -614,6 +630,141 @@ class VideoPlayerManager: ObservableObject {
             print("⚠️ [Player] Failed to configure audio session: \(error)")
         }
         #endif
+    }
+
+    /// Observe player item status to detect playback failures and trigger fallback
+    private func setupPlayerItemObservers() {
+        guard let playerItem = playerItem else { return }
+
+        // Observe status changes
+        statusObservation = playerItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    print("✅ [Player] Player item ready to play")
+                case .failed:
+                    print("❌ [Player] Player item failed: \(item.error?.localizedDescription ?? "unknown error")")
+                    await self.handlePlaybackFailure()
+                case .unknown:
+                    print("⏳ [Player] Player item status unknown")
+                @unknown default:
+                    break
+                }
+            }
+        }
+
+        // Also observe error property directly
+        errorObservation = playerItem.observe(\.error, options: [.new]) { [weak self] item, _ in
+            if let error = item.error {
+                print("❌ [Player] Player item error: \(error.localizedDescription)")
+                Task { @MainActor in
+                    await self?.handlePlaybackFailure()
+                }
+            }
+        }
+
+        print("👁️ [Player] Set up player item observers")
+    }
+
+    /// Handle playback failure by falling back to transcode
+    private func handlePlaybackFailure() async {
+        // Only attempt fallback once and only if not already transcoding
+        guard !hasAttemptedFallback,
+              playbackMethod != .transcode,
+              let client = authService?.currentClient,
+              let partKey = currentPartKey,
+              let ratingKey = currentRatingKey,
+              let mediaKey = currentMediaKey else {
+            if hasAttemptedFallback {
+                print("⚠️ [Player] Already attempted fallback, not retrying")
+            }
+            return
+        }
+
+        hasAttemptedFallback = true
+        print("🔄 [Player] Direct play failed, falling back to transcode...")
+        loadingMessage = "Switching to transcode..."
+        isLoading = true
+
+        // Stop current playback
+        player?.pause()
+        statusObservation = nil
+        errorObservation = nil
+
+        // Stop current transcode session if any
+        if let sessionID = currentSessionID {
+            await client.stopTranscode(sessionID: sessionID)
+        }
+
+        // Build transcode URL directly
+        let newSessionID = UUID().uuidString
+        guard var components = URLComponents(url: client.baseURL, resolvingAgainstBaseURL: false) else {
+            error = "Failed to build transcode URL"
+            isLoading = false
+            return
+        }
+
+        components.path = "/video/:/transcode/universal/start.m3u8"
+        var queryItems = [
+            URLQueryItem(name: "path", value: "/library/metadata/\(ratingKey)"),
+            URLQueryItem(name: "session", value: newSessionID),
+            URLQueryItem(name: "protocol", value: "hls"),
+            URLQueryItem(name: "directPlay", value: "0"),
+            URLQueryItem(name: "directStream", value: "0"),
+            URLQueryItem(name: "videoCodec", value: "h264,hevc"),
+            URLQueryItem(name: "videoResolution", value: "3840x2160"),
+            URLQueryItem(name: "maxVideoBitrate", value: "40000"),
+            URLQueryItem(name: "audioCodec", value: "aac,ac3,eac3"),
+            URLQueryItem(name: "audioBoost", value: "100"),
+            URLQueryItem(name: "subtitleSize", value: "100"),
+            URLQueryItem(name: "subtitles", value: "auto"),
+            URLQueryItem(name: "mediaBufferSize", value: "50000"),
+            URLQueryItem(name: "copyts", value: "1"),
+            URLQueryItem(name: "X-Plex-Client-Identifier", value: PlexAPIClient.plexClientIdentifier),
+            URLQueryItem(name: "X-Plex-Product", value: PlexAPIClient.plexProduct),
+            URLQueryItem(name: "X-Plex-Platform", value: PlexAPIClient.plexPlatform),
+            URLQueryItem(name: "X-Plex-Device", value: PlexAPIClient.plexDevice)
+        ]
+        if let token = client.accessToken {
+            queryItems.append(URLQueryItem(name: "X-Plex-Token", value: token))
+        }
+        components.queryItems = queryItems
+
+        guard let transcodeURL = components.url else {
+            error = "Failed to build transcode URL"
+            isLoading = false
+            return
+        }
+
+        print("🎬 [Player] Fallback transcode URL: \(transcodeURL)")
+
+        // Update session and method
+        self.currentSessionID = newSessionID
+        self.playbackMethod = .transcode
+
+        // Create new player item
+        let asset = AVURLAsset(url: transcodeURL)
+        let newPlayerItem = AVPlayerItem(asset: asset)
+        self.playerItem = newPlayerItem
+
+        // Set up observers on new item
+        setupPlayerItemObservers()
+
+        // Replace current item
+        player?.replaceCurrentItem(with: newPlayerItem)
+
+        // Resume from saved position
+        if let viewOffset = savedViewOffset, viewOffset > 0 {
+            let seconds = Double(viewOffset) / 1000.0
+            print("🎬 [Player] Resuming transcode from \(seconds)s")
+            await player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+        }
+
+        // Start playback
+        player?.play()
+        print("✅ [Player] Fallback transcode started")
+        isLoading = false
     }
 
     private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
