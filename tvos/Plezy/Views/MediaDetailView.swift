@@ -103,15 +103,18 @@ struct MediaDetailView: View {
         .ignoresSafeArea()
     }
 
-    // MARK: - Gradient Overlay (Bottom-to-middle only, no extra dimming)
+    // MARK: - Gradient Overlay (Multi-stop for better text readability)
 
     private var gradientOverlay: some View {
         LinearGradient(
-            gradient: Gradient(colors: [
-                Color.black.opacity(0.0),
-                Color.black.opacity(0.8)
+            gradient: Gradient(stops: [
+                .init(color: .clear, location: 0.0),
+                .init(color: .clear, location: 0.3),
+                .init(color: .black.opacity(0.3), location: 0.5),
+                .init(color: .black.opacity(0.6), location: 0.7),
+                .init(color: .black.opacity(0.9), location: 1.0)
             ]),
-            startPoint: .center,
+            startPoint: .top,
             endPoint: .bottom
         )
         .ignoresSafeArea()
@@ -291,7 +294,8 @@ struct MediaDetailContent: View {
                 } placeholder: {
                     titleText
                 }
-                .frame(maxWidth: 400, maxHeight: 100, alignment: .leading)
+                .frame(maxWidth: 600, maxHeight: 180, alignment: .leading)
+                .shadow(color: .black.opacity(0.7), radius: 10, x: 0, y: 4)
             } else {
                 titleText
             }
@@ -300,28 +304,30 @@ struct MediaDetailContent: View {
 
     private var titleText: some View {
         Text(media.title)
-            .font(.system(size: 40, weight: .bold))
+            .font(.system(size: 76, weight: .bold))
             .foregroundColor(.white)
             .lineLimit(2)
+            .shadow(color: .black.opacity(0.8), radius: 10, x: 0, y: 4)
     }
 
-    // Row 1: Type | Genre (UNCHANGED)
+    // Row 1: Type | Genre
     private var metadataRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
-                .foregroundColor(.white.opacity(0.9))
-                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .fontWeight(.medium)
 
             if let genres = media.genre, let firstGenre = genres.first {
-                Text("·").foregroundColor(.white.opacity(0.4))
+                Text("·").foregroundColor(.white.opacity(0.7))
                 Text(firstGenre.tag)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.white)
             }
         }
-        .font(.system(size: 18, weight: .medium))
+        .font(.system(size: 24, weight: .medium))
+        .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
     }
 
-    // SYNOPSIS AREA - Fixed height, content swaps on episode focus (UNCHANGED)
+    // SYNOPSIS AREA - Fixed height, content swaps on episode focus
     private var synopsisArea: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let episode = focusedEpisode {
@@ -330,69 +336,76 @@ struct MediaDetailContent: View {
                 showSynopsis
             }
         }
-        .frame(height: 100, alignment: .topLeading)
+        .frame(height: 120, alignment: .topLeading)
         .animation(.easeInOut(duration: 0.15), value: focusedEpisode?.id)
     }
 
     private var showSynopsis: some View {
         Text(media.summary ?? "")
-            .font(.system(size: 18))
-            .foregroundColor(.white.opacity(0.75))
+            .font(.system(size: 24, weight: .regular))
+            .foregroundColor(.white.opacity(0.9))
             .lineLimit(4)
-            .frame(maxWidth: 800, alignment: .leading)
+            .frame(maxWidth: 1000, alignment: .leading)
+            .shadow(color: .black.opacity(0.6), radius: 6, x: 0, y: 2)
     }
 
-    // Row 2: Technical details (Year, Runtime, Resolution, Audio) (UNCHANGED)
+    // Row 2: Technical details (Year, Runtime, Resolution, Audio)
     private var technicalDetailsRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             // Rating
             if let r = media.audienceRating {
                 Text("★ \(String(format: "%.1f", r))")
                     .foregroundColor(.yellow)
             }
 
-            // Content Rating
+            // Content Rating (cleaned - removes /au suffix)
             if let c = media.contentRating {
-                if media.audienceRating != nil { Text("·").foregroundColor(.white.opacity(0.4)) }
-                Text(c)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.15))
+                if media.audienceRating != nil { Text("·").foregroundColor(.white.opacity(0.6)) }
+                Text(cleanedContentRating(c))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.2))
                     .cornerRadius(4)
             }
 
             // Year
             if let y = media.year {
-                Text("·").foregroundColor(.white.opacity(0.4))
+                Text("·").foregroundColor(.white.opacity(0.6))
                 Text(String(y))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.white)
             }
 
             // Runtime
             if let d = media.duration {
-                Text("·").foregroundColor(.white.opacity(0.4))
+                Text("·").foregroundColor(.white.opacity(0.6))
                 Text(formatDuration(d))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.white)
             }
 
             // Resolution (movies only)
             if media.type == "movie", let resolution = mediaResolution {
-                Text("·").foregroundColor(.white.opacity(0.4))
+                Text("·").foregroundColor(.white.opacity(0.6))
                 Text(resolution)
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(.white)
                     .fontWeight(.semibold)
             }
 
             // Audio format (movies only)
             if media.type == "movie", let audio = mediaAudioFormat {
-                Text("·").foregroundColor(.white.opacity(0.4))
+                Text("·").foregroundColor(.white.opacity(0.6))
                 Text(audio)
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(.white)
                     .fontWeight(.semibold)
             }
         }
-        .font(.system(size: 16, weight: .medium))
+        .font(.system(size: 20, weight: .medium))
+        .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
+    }
+
+    /// Clean content rating by removing regional suffixes like "/au"
+    private func cleanedContentRating(_ rating: String) -> String {
+        rating.replacingOccurrences(of: "/au", with: "", options: .caseInsensitive)
     }
 
     // Get resolution from media info (UNCHANGED)
@@ -431,31 +444,34 @@ struct MediaDetailContent: View {
     }
 
     private func episodeSynopsis(episode: PlexMetadata) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
                 if let s = episode.parentIndex, let e = episode.index {
                     Text("S\(s), E\(e)")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(Color.beaconPurple)
                 }
                 if let d = episode.duration {
-                    Text("·").foregroundColor(.white.opacity(0.4))
+                    Text("·").foregroundColor(.white.opacity(0.6))
                     Text(formatDuration(d))
-                        .font(.system(size: 16))
-                        .foregroundColor(.white.opacity(0.6))
+                        .font(.system(size: 20))
+                        .foregroundColor(.white.opacity(0.8))
                 }
             }
+            .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
 
             Text(episode.title)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 26, weight: .semibold))
                 .foregroundColor(.white)
                 .lineLimit(1)
+                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
 
             Text(episode.summary ?? "")
-                .font(.system(size: 16))
-                .foregroundColor(.white.opacity(0.7))
+                .font(.system(size: 20))
+                .foregroundColor(.white.opacity(0.85))
                 .lineLimit(2)
-                .frame(maxWidth: 800, alignment: .leading)
+                .frame(maxWidth: 1000, alignment: .leading)
+                .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
         }
     }
 
