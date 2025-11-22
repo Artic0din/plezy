@@ -10,6 +10,7 @@ import SwiftUI
 struct ServerSelectionView: View {
     @EnvironmentObject var authService: PlexAuthService
     @Environment(\.dismiss) var dismiss
+    @State private var hasAutoSelected = false
 
     var body: some View {
         ZStack {
@@ -54,17 +55,17 @@ struct ServerSelectionView: View {
                             ForEach(authService.availableServers) { server in
                                 ServerCard(server: server) {
                                     print("🔵 [ServerSelection] Button clicked for server: \(server.name)")
-                                    Task {
-                                        print("🔵 [ServerSelection] Starting selectServer for: \(server.name)")
-                                        await authService.selectServer(server)
-                                        print("🔵 [ServerSelection] Finished selectServer. Selected server: \(authService.selectedServer?.name ?? "nil")")
-                                        // Only dismiss if server was successfully selected
-                                        if authService.selectedServer != nil {
-                                            print("🔵 [ServerSelection] Server selected successfully, dismissing sheet")
-                                            dismiss()
-                                        } else {
-                                            print("🔴 [ServerSelection] Server selection failed, staying on sheet")
-                                        }
+                                    print("🔵 [ServerSelection] Starting selectServer for: \(server.name)")
+                                    await authService.selectServer(server)
+                                    print("🔵 [ServerSelection] Finished selectServer. Selected server: \(authService.selectedServer?.name ?? "nil")")
+                                    // Only dismiss if server was successfully selected
+                                    if authService.selectedServer != nil {
+                                        print("🔵 [ServerSelection] Server selected successfully, dismissing sheet")
+                                        dismiss()
+                                        return true
+                                    } else {
+                                        print("🔴 [ServerSelection] Server selection failed, staying on sheet")
+                                        return false
                                     }
                                 }
                             }
@@ -87,13 +88,25 @@ struct ServerSelectionView: View {
 
 struct ServerCard: View {
     let server: PlexServer
-    let action: () -> Void
+    let action: () async -> Bool  // Returns true if successful
     @FocusState private var isFocused: Bool
+    @State private var isConnecting = false
 
     var body: some View {
         Button {
+            guard !isConnecting else {
+                print("🔵 [ServerCard] Already connecting, ignoring tap")
+                return
+            }
             print("🔵 [ServerCard] Button tapped for: \(server.name)")
-            action()
+            isConnecting = true
+            Task {
+                let success = await action()
+                if !success {
+                    // Reset connecting state if failed
+                    isConnecting = false
+                }
+            }
         } label: {
             VStack(alignment: .leading, spacing: 15) {
                 HStack {
@@ -168,8 +181,29 @@ struct ServerCard: View {
                         lineWidth: isFocused ? DesignTokens.borderWidthFocusedThick : 2
                     )
             )
+            .overlay(
+                // Loading overlay when connecting
+                Group {
+                    if isConnecting {
+                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge)
+                            .fill(Color.black.opacity(0.7))
+                            .overlay(
+                                VStack(spacing: 15) {
+                                    ProgressView()
+                                        .scaleEffect(1.5)
+                                        .tint(.white)
+                                    Text("Connecting...")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                }
+                            )
+                    }
+                }
+            )
         }
+        .buttonStyle(.plain)
         .focused($isFocused)
+        .disabled(isConnecting)
     }
 }
 
