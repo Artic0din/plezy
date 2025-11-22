@@ -513,11 +513,12 @@ extension PlexAPIClient {
             let code: String
         }
 
-        // Use strong=true to match Flutter implementation and ensure proper token generation
+        // Use strong=false (default) for short 4-character PIN codes
+        // tvOS users must manually type the code at plex.tv/link
+        // (Flutter uses strong=true because it can redirect to an auth URL)
         let response: PinResponse = try await request(
             path: "/api/v2/pins",
-            method: "POST",
-            queryItems: [URLQueryItem(name: "strong", value: "true")]
+            method: "POST"
         )
 
         print("🔑 [PIN] Created PIN: \(response.code) (ID: \(response.id))")
