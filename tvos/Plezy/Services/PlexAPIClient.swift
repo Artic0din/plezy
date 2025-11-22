@@ -263,12 +263,13 @@ class PlexAPIClient {
             return entry.metadata
         }
 
-        // Include all necessary data for playback
+        // Include all necessary data for playback and metadata
         // Based on official Plex API docs: https://plexapi.dev/api-reference/library/get-metadata-by-ratingkey
         let queryItems = [
             URLQueryItem(name: "includeChapters", value: "1"),
             URLQueryItem(name: "includeExtras", value: "0"),
-            URLQueryItem(name: "includeImages", value: "1")
+            URLQueryItem(name: "includeImages", value: "1"),
+            URLQueryItem(name: "includeGuids", value: "1")  // Include TMDB/IMDB/TVDB IDs
         ]
         #if DEBUG
         print("📡 [API] getMetadata for ratingKey: \(ratingKey)")

@@ -361,7 +361,22 @@ struct PlexMetadata: Codable, Identifiable, Equatable {
     // Images (for clearLogo, etc.)
     var Image: [PlexImage]?
 
+    // GUIDs (for TMDB, IMDB, TVDB identifiers)
+    let Guid: [PlexGuid]?
+
     var id: String { ratingKey ?? key }
+
+    /// Extract TMDB ID from the Guid array (looks for "tmdb://12345" format)
+    var tmdbId: Int? {
+        guard let guids = Guid else { return nil }
+        for guid in guids {
+            if guid.id.hasPrefix("tmdb://") {
+                let idString = String(guid.id.dropFirst("tmdb://".count))
+                return Int(idString)
+            }
+        }
+        return nil
+    }
 
     // Extract clearLogo from Image array
     var clearLogo: String? {
@@ -443,6 +458,7 @@ struct PlexMetadata: Codable, Identifiable, Equatable {
         case writer = "Writer"
         case country = "Country"
         case Image
+        case Guid  // Array of GUIDs (tmdb://, imdb://, tvdb://)
     }
 }
 
@@ -607,6 +623,11 @@ struct PlexTag: Codable {
 struct PlexImage: Codable {
     let type: String
     let url: String
+}
+
+/// Represents a GUID from Plex metadata (e.g., "tmdb://12345", "imdb://tt1234567")
+struct PlexGuid: Codable {
+    let id: String
 }
 
 // MARK: - Hubs (Content Discovery)

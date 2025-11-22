@@ -285,6 +285,9 @@ struct MediaDetailContent: View {
 
     @EnvironmentObject var authService: PlexAuthService
 
+    // Network logo for TV shows (fetched from TMDB)
+    @State private var networkLogoURL: URL?
+
     var body: some View {
         // ORIGINAL INNER LAYOUT - unchanged from ShowDetailCard
         VStack(alignment: .leading, spacing: 0) {
@@ -292,7 +295,7 @@ struct MediaDetailContent: View {
             // Positioned just above the season selector
             VStack(alignment: .leading, spacing: 12) {
                 logoOrTitle
-                metadataRow          // Type | Genre
+                metadataRow          // Type | Genre (with network logo for TV shows)
                 synopsisArea         // Description
                 technicalDetailsRow  // Rating, Year, Runtime, Resolution, Audio
                 actionButtons
@@ -316,6 +319,22 @@ struct MediaDetailContent: View {
         // REMOVED: .background(ZStack { artwork + gradient })
         // REMOVED: .clipShape(RoundedRectangle(...))
         // REMOVED: .overlay(RoundedRectangle(...).strokeBorder(...))
+        .task {
+            await loadNetworkLogo()
+        }
+    }
+
+    /// Fetch network logo from TMDB for TV shows only
+    private func loadNetworkLogo() async {
+        // Only fetch for TV shows with a TMDB ID
+        guard media.type == "show", let tmdbId = media.tmdbId else {
+            return
+        }
+
+        let logoURL = await TMDBService.shared.fetchPrimaryNetworkLogoURL(forTVId: tmdbId)
+        await MainActor.run {
+            self.networkLogoURL = logoURL
+        }
     }
 
     // MARK: - Hero Components (ALL UNCHANGED)
@@ -346,9 +365,29 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.8), radius: 10, x: 0, y: 4)
     }
 
-    // Row 1: Type | Genre
+    // Row 1: Network Logo (TV only) | Type | Genre
     private var metadataRow: some View {
         HStack(spacing: 10) {
+            // Network logo for TV shows (from TMDB)
+            if media.type == "show", let logoURL = networkLogoURL {
+                AsyncImage(url: logoURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 28)
+                            .frame(maxWidth: 80)
+                    case .failure, .empty:
+                        EmptyView()
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+
+                Text("·").foregroundColor(.white.opacity(0.7))
+            }
+
             Text(media.type == "movie" ? "Movie" : "TV Show")
                 .foregroundColor(.white)
                 .fontWeight(.medium)
