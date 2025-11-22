@@ -526,20 +526,50 @@ extension PlexAPIClient {
     }
 
     func checkPin(id: Int) async throws -> PlexPin {
-        struct PinResponse: Decodable {
-            let id: Int
-            let code: String
-            let authToken: String?
-            let trusted: Bool?
-        }
+        // First, get raw response to debug
+        let rawResponse: [String: Any] = try await requestRaw(path: "/api/v2/pins/\(id)")
 
-        let response: PinResponse = try await request(path: "/api/v2/pins/\(id)")
+        // Debug: print all keys to see what Plex returns
+        print("🔑 [PIN] Response keys: \(rawResponse.keys.sorted())")
+
+        let pinId = rawResponse["id"] as? Int ?? 0
+        let code = rawResponse["code"] as? String ?? ""
+        let authToken = rawResponse["authToken"] as? String
+        let trusted = rawResponse["trusted"] as? Bool ?? false
 
         // Debug logging for PIN status
-        let hasToken = response.authToken != nil && !response.authToken!.isEmpty
-        print("🔑 [PIN] Status - trusted: \(response.trusted ?? false), hasToken: \(hasToken)")
+        let hasToken = authToken != nil && !authToken!.isEmpty
+        print("🔑 [PIN] Status - trusted: \(trusted), hasToken: \(hasToken), authToken: \(authToken?.prefix(20) ?? "nil")...")
 
-        return PlexPin(id: response.id, code: response.code, authToken: response.authToken)
+        return PlexPin(id: pinId, code: code, authToken: authToken)
+    }
+
+    /// Raw request that returns dictionary for debugging
+    private func requestRaw(path: String) async throws -> [String: Any] {
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+
+        guard let url = urlComponents?.url else {
+            throw PlexAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw PlexAPIError.serverError
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw PlexAPIError.decodingError
+        }
+
+        return json
     }
 
     func getUser() async throws -> PlexUser {
