@@ -532,9 +532,15 @@ extension PlexAPIClient {
             let id: Int
             let code: String
             let authToken: String?
+            let trusted: Bool?
         }
 
         let response: PinResponse = try await request(path: "/api/v2/pins/\(id)")
+
+        // Debug logging for PIN status
+        let hasToken = response.authToken != nil && !response.authToken!.isEmpty
+        print("🔑 [PIN] Status - trusted: \(response.trusted ?? false), hasToken: \(hasToken)")
+
         return PlexPin(id: response.id, code: response.code, authToken: response.authToken)
     }
 
