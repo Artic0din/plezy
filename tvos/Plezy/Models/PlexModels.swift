@@ -101,7 +101,7 @@ struct PlexServer: Codable, Identifiable, Equatable {
         // workingURL is not encoded/decoded - it's set at runtime
     }
 
-    // Custom initializer to support workingURL
+    // Custom initializer to support workingURL and flexible date decoding
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decode(String.self, forKey: .name)
@@ -111,8 +111,25 @@ struct PlexServer: Codable, Identifiable, Equatable {
         platformVersion = try container.decode(String.self, forKey: .platformVersion)
         device = try container.decode(String.self, forKey: .device)
         clientIdentifier = try container.decode(String.self, forKey: .clientIdentifier)
-        createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt)
-        lastSeenAt = try container.decodeIfPresent(Int.self, forKey: .lastSeenAt)
+
+        // Handle createdAt - can be Int (Unix timestamp) or String (ISO8601)
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .createdAt) {
+            createdAt = intValue
+        } else if let stringValue = try? container.decodeIfPresent(String.self, forKey: .createdAt) {
+            createdAt = Self.parseISO8601ToUnix(stringValue)
+        } else {
+            createdAt = nil
+        }
+
+        // Handle lastSeenAt - can be Int (Unix timestamp) or String (ISO8601)
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .lastSeenAt) {
+            lastSeenAt = intValue
+        } else if let stringValue = try? container.decodeIfPresent(String.self, forKey: .lastSeenAt) {
+            lastSeenAt = Self.parseISO8601ToUnix(stringValue)
+        } else {
+            lastSeenAt = nil
+        }
+
         provides = try container.decode(String.self, forKey: .provides)
         ownerId = try container.decodeIfPresent(Int.self, forKey: .ownerId)
         sourceTitle = try container.decodeIfPresent(String.self, forKey: .sourceTitle)
@@ -129,6 +146,21 @@ struct PlexServer: Codable, Identifiable, Equatable {
         natLoopbackSupported = try container.decodeIfPresent(Bool.self, forKey: .natLoopbackSupported)
         connections = try container.decode([PlexConnection].self, forKey: .connections)
         workingURL = nil  // Set at runtime after connection testing
+    }
+
+    /// Parse ISO8601 date string to Unix timestamp
+    private static func parseISO8601ToUnix(_ dateString: String) -> Int? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: dateString) {
+            return Int(date.timeIntervalSince1970)
+        }
+        // Try without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: dateString) {
+            return Int(date.timeIntervalSince1970)
+        }
+        return nil
     }
 
     // Memberwise initializer for creating copies with workingURL
