@@ -98,12 +98,15 @@ struct MediaCardRow<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Section title
-            Text(title)
-                .font(.system(size: 40, weight: .bold, design: .default))
-                .foregroundColor(.white)
-                .padding(.horizontal, CardRowLayout.horizontalPadding)
-                .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+            // Section title with Liquid Glass styling
+            HStack {
+                Text(title)
+                    .font(.system(size: 36, weight: .bold, design: .default))
+                    .foregroundColor(.white)
+                    .liquidGlassSectionHeader()
+                Spacer()
+            }
+            .padding(.horizontal, CardRowLayout.horizontalPadding)
 
             // Horizontal scrolling row with explicit card sizing
             ScrollView(.horizontal, showsIndicators: false) {
@@ -137,37 +140,37 @@ struct MediaCardRow<Content: View>: View {
     }
 }
 
-// MARK: - Continue Watching Row
+// MARK: - Up Next Row
 
-/// Specialized row for Continue Watching with play action
+/// Specialized row for Up Next (Continue Watching) with play action and context menu
 struct ContinueWatchingRow: View {
     let items: [PlexMetadata]
     let onPlay: (PlexMetadata) -> Void
+    /// Optional callback for context menu actions
+    var onContextAction: ((MediaCardContextAction, PlexMetadata) -> Void)?
+
+    @State private var selectedItem: PlexMetadata?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Continue Watching")
-                .font(.system(size: 32, weight: .bold, design: .default))
-                .foregroundColor(.white)
-                .padding(.horizontal, CardRowLayout.horizontalPadding)
-                .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+            // Section title with Liquid Glass styling
+            HStack {
+                Text("Up Next")
+                    .font(.system(size: 32, weight: .bold, design: .default))
+                    .foregroundColor(.white)
+                    .liquidGlassSectionHeader()
+                Spacer()
+            }
+            .padding(.horizontal, CardRowLayout.horizontalPadding)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: CardRowLayout.cardSpacing) {
                     ForEach(items) { item in
-                        MediaCard(
-                            media: item,
-                            config: .custom(
-                                width: CardRowLayout.cardWidth,
-                                height: CardRowLayout.cardHeight,
-                                showProgress: true,
-                                showLabel: .inside,
-                                showLogo: true,
-                                showEpisodeLabelBelow: item.type == "episode"
-                            )
-                        ) {
-                            onPlay(item)
-                        }
+                        ContinueWatchingCard(
+                            item: item,
+                            onPlay: onPlay,
+                            onContextAction: onContextAction
+                        )
                     }
                 }
                 .padding(.horizontal, CardRowLayout.horizontalPadding)
@@ -177,6 +180,51 @@ struct ContinueWatchingRow: View {
         .padding(.bottom, 60)
         .id("continueWatching")
         .focusSection()
+    }
+}
+
+/// Individual card in Continue Watching row with context menu support
+struct ContinueWatchingCard: View {
+    let item: PlexMetadata
+    let onPlay: (PlexMetadata) -> Void
+    var onContextAction: ((MediaCardContextAction, PlexMetadata) -> Void)?
+
+    var body: some View {
+        MediaCard(
+            media: item,
+            config: .custom(
+                width: CardRowLayout.cardWidth,
+                height: CardRowLayout.cardHeight,
+                showProgress: true,
+                showLabel: .inside,
+                showLogo: true,
+                showEpisodeLabelBelow: item.type == "episode"
+            )
+        ) {
+            onPlay(item)
+        }
+        // Add context menu for Continue Watching items
+        .contextMenu {
+            Button {
+                onContextAction?(.removeFromContinueWatching, item)
+            } label: {
+                Label("Remove from Continue Watching", systemImage: "xmark.circle")
+            }
+
+            Button {
+                onContextAction?(.markWatched, item)
+            } label: {
+                Label("Mark as Watched", systemImage: "checkmark.circle")
+            }
+
+            if item.isWatched {
+                Button {
+                    onContextAction?(.markUnwatched, item)
+                } label: {
+                    Label("Mark as Unwatched", systemImage: "circle")
+                }
+            }
+        }
     }
 }
 
@@ -190,11 +238,15 @@ struct HubRow: View {
     var body: some View {
         if let items = hub.metadata, !items.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
-                Text(hub.title)
-                    .font(.system(size: 40, weight: .bold, design: .default))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, CardRowLayout.horizontalPadding)
-                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+                // Section title with Liquid Glass styling
+                HStack {
+                    Text(hub.title)
+                        .font(.system(size: 36, weight: .bold, design: .default))
+                        .foregroundColor(.white)
+                        .liquidGlassSectionHeader()
+                    Spacer()
+                }
+                .padding(.horizontal, CardRowLayout.horizontalPadding)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: CardRowLayout.cardSpacing) {
@@ -239,11 +291,15 @@ struct GeometryMediaCardRow: View {
             let calculatedHeight = CardRowLayout.cardHeight(for: calculatedWidth)
 
             VStack(alignment: .leading, spacing: 20) {
-                Text(title)
-                    .font(.system(size: 40, weight: .bold, design: .default))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, CardRowLayout.horizontalPadding)
-                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+                // Section title with Liquid Glass styling
+                HStack {
+                    Text(title)
+                        .font(.system(size: 36, weight: .bold, design: .default))
+                        .foregroundColor(.white)
+                        .liquidGlassSectionHeader()
+                    Spacer()
+                }
+                .padding(.horizontal, CardRowLayout.horizontalPadding)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: CardRowLayout.cardSpacing) {

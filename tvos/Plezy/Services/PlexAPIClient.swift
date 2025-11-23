@@ -8,10 +8,30 @@
 import Foundation
 import Combine
 
+/// Cache entry wrapper for metadata with timestamp
+private class MetadataCacheEntry {
+    let metadata: PlexMetadata
+    let timestamp: Date
+
+    init(metadata: PlexMetadata, timestamp: Date = Date()) {
+        self.metadata = metadata
+        self.timestamp = timestamp
+    }
+
+    func isValid(ttl: TimeInterval) -> Bool {
+        return Date().timeIntervalSince(timestamp) < ttl
+    }
+}
+
 class PlexAPIClient {
     let baseURL: URL
     let accessToken: String?
     private let session: URLSession
+
+    // In-memory metadata cache to reduce redundant network calls
+    // Shared across all instances for efficiency
+    private static let metadataCache = NSCache<NSString, MetadataCacheEntry>()
+    private static let metadataCacheTTL: TimeInterval = 300  // 5 minutes
 
     // Plex.tv API constants
     static let plexTVURL = "https://plex.tv"
@@ -64,7 +84,7 @@ class PlexAPIClient {
         configuration.httpMaximumConnectionsPerHost = 6 // Allow more concurrent connections
 
         // Configure aggressive caching
-        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let cacheURL = cachesDirectory.appendingPathComponent("PlexAPICache")
         let cache = URLCache(
             memoryCapacity: 50 * 1024 * 1024, // 50 MB memory cache
@@ -234,24 +254,45 @@ class PlexAPIClient {
     }
 
     func getMetadata(ratingKey: String) async throws -> PlexMetadata {
-        // Include all necessary data for playback
+        // Check cache first
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        if let entry = Self.metadataCache.object(forKey: cacheKey), entry.isValid(ttl: Self.metadataCacheTTL) {
+            #if DEBUG
+            print("📡 [API] getMetadata cache HIT for ratingKey: \(ratingKey)")
+            #endif
+            return entry.metadata
+        }
+
+        // Include all necessary data for playback and metadata
         // Based on official Plex API docs: https://plexapi.dev/api-reference/library/get-metadata-by-ratingkey
         let queryItems = [
             URLQueryItem(name: "includeChapters", value: "1"),
             URLQueryItem(name: "includeExtras", value: "0"),
-            URLQueryItem(name: "includeImages", value: "1")
+            URLQueryItem(name: "includeImages", value: "1"),
+            URLQueryItem(name: "includeGuids", value: "1")  // Include TMDB/IMDB/TVDB IDs
         ]
+        #if DEBUG
         print("📡 [API] getMetadata for ratingKey: \(ratingKey)")
+        #endif
         let response: PlexResponse<PlexMetadata> = try await request(
             path: "/library/metadata/\(ratingKey)",
             queryItems: queryItems
         )
+        #if DEBUG
         print("📡 [API] Metadata response - items count: \(response.MediaContainer.items.count)")
+        #endif
         guard let metadata = response.MediaContainer.items.first else {
             throw PlexAPIError.noData
         }
+        #if DEBUG
         print("📡 [API] First metadata item - type: \(metadata.type ?? "unknown"), title: \(metadata.title)")
         print("📡 [API] Metadata has media array: \(metadata.media != nil), count: \(metadata.media?.count ?? 0)")
+        #endif
+
+        // Cache the result
+        let entry = MetadataCacheEntry(metadata: metadata)
+        Self.metadataCache.setObject(entry, forKey: cacheKey)
+
         return metadata
     }
 
@@ -302,13 +343,20 @@ class PlexAPIClient {
         // Fetch all show/movie metadata in parallel using TaskGroup
         var logoCache: [String: String?] = [:]
 
+        // Helper to extract clearLogo from metadata (avoids actor isolation issues in task group)
+        func extractClearLogo(from metadata: PlexMetadata) -> String? {
+            metadata.Image?.first(where: { $0.type == "clearLogo" })?.url
+        }
+
         await withTaskGroup(of: (String, String?).self) { group in
             // Add tasks for shows
             for showKey in showKeysToFetch {
                 group.addTask {
                     do {
                         let metadata = try await self.getMetadata(ratingKey: showKey)
-                        return (showKey, metadata.clearLogo)
+                        // Extract logo inline to avoid actor isolation issues with computed property
+                        let logo = metadata.Image?.first(where: { $0.type == "clearLogo" })?.url
+                        return (showKey, logo)
                     } catch {
                         return (showKey, nil)
                     }
@@ -320,7 +368,9 @@ class PlexAPIClient {
                 group.addTask {
                     do {
                         let metadata = try await self.getMetadata(ratingKey: movieKey)
-                        return (movieKey, metadata.clearLogo)
+                        // Extract logo inline to avoid actor isolation issues with computed property
+                        let logo = metadata.Image?.first(where: { $0.type == "clearLogo" })?.url
+                        return (movieKey, logo)
                     } catch {
                         return (movieKey, nil)
                     }
@@ -472,6 +522,47 @@ class PlexAPIClient {
             path: "/:/unscrobble",
             queryItems: queryItems
         )
+    }
+
+    /// Mark an item as watched (scrobble)
+    /// This marks the entire movie/episode as watched
+    func markAsWatched(ratingKey: String) async throws {
+        try await scrobble(ratingKey: ratingKey)
+        // Invalidate cache for this item
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        Self.metadataCache.removeObject(forKey: cacheKey)
+        print("✅ [API] Marked \(ratingKey) as watched")
+    }
+
+    /// Mark an item as unwatched (unscrobble)
+    /// This removes watch status from the movie/episode
+    func markAsUnwatched(ratingKey: String) async throws {
+        try await unscrobble(ratingKey: ratingKey)
+        // Invalidate cache for this item
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        Self.metadataCache.removeObject(forKey: cacheKey)
+        print("✅ [API] Marked \(ratingKey) as unwatched")
+    }
+
+    /// Remove an item from Continue Watching by clearing its progress
+    /// This sets viewOffset to 0 without marking as watched
+    func removeFromContinueWatching(ratingKey: String) async throws {
+        // Clear the playback position by setting viewOffset to 0
+        // This removes it from On Deck without marking it watched
+        let queryItems = [
+            URLQueryItem(name: "ratingKey", value: ratingKey),
+            URLQueryItem(name: "state", value: "stopped"),
+            URLQueryItem(name: "time", value: "0"),
+            URLQueryItem(name: "duration", value: "0")
+        ]
+        let _: PlexMediaContainer<PlexMetadata> = try await request(
+            path: "/:/timeline",
+            queryItems: queryItems
+        )
+        // Invalidate cache for this item
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        Self.metadataCache.removeObject(forKey: cacheKey)
+        print("✅ [API] Removed \(ratingKey) from Continue Watching")
     }
 
     // MARK: - Chapters
@@ -708,8 +799,18 @@ class PlexAPIClient {
 // MARK: - Plex.tv API Client
 
 extension PlexAPIClient {
+    /// Safe URL for plex.tv - validated at compile time via static let
+    private static let plexTVBaseURL: URL = {
+        guard let url = URL(string: plexTVURL) else {
+            // This should never happen since plexTVURL is a constant valid URL
+            // Using fatalError here instead of force unwrap provides better crash diagnostics
+            fatalError("Invalid Plex.tv URL constant: \(plexTVURL)")
+        }
+        return url
+    }()
+
     static func createPlexTVClient(token: String? = nil) -> PlexAPIClient {
-        PlexAPIClient(baseURL: URL(string: plexTVURL)!, accessToken: token)
+        PlexAPIClient(baseURL: plexTVBaseURL, accessToken: token)
     }
 
     // MARK: - PIN Authentication
@@ -789,7 +890,7 @@ extension PlexAPIClient {
         }
 
         // Debug logging for PIN status
-        let hasToken = authToken != nil && !authToken!.isEmpty
+        let hasToken = authToken.map { !$0.isEmpty } ?? false
         print("🔑 [PIN] Status - trusted: \(trusted), hasToken: \(hasToken), authToken: \(authToken?.prefix(20) ?? "nil")...")
 
         return PlexPin(id: pinId, code: code, authToken: authToken)

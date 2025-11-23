@@ -12,34 +12,42 @@ struct MoviesLibraryView: View {
     @EnvironmentObject var tabCoordinator: TabCoordinator
     @State private var libraries: [PlexLibrary] = []
     @State private var isLoading = true
+    // Navigation path for hierarchical navigation
+    @State private var navigationPath = NavigationPath()
 
     private let cache = CacheService.shared
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        NavigationStack(path: $navigationPath) {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            if isLoading {
-                VStack {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .tint(.white)
-                    Text("Loading Movies...")
-                        .foregroundColor(.gray)
-                        .padding(.top)
-                }
-            } else if let movieLibrary = libraries.first(where: { $0.mediaType == .movie }) {
-                LibraryContentView(library: movieLibrary)
-            } else {
-                VStack(spacing: 20) {
-                    Image(systemName: "film.badge.questionmark")
-                        .font(.system(size: 80))
-                        .foregroundColor(.gray)
+                if isLoading {
+                    VStack {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(.white)
+                        Text("Loading Movies...")
+                            .foregroundColor(.gray)
+                            .padding(.top)
+                    }
+                } else if let movieLibrary = libraries.first(where: { $0.mediaType == .movie }) {
+                    LibraryContentView(library: movieLibrary, navigationPath: $navigationPath)
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "film.badge.questionmark")
+                            .font(.system(size: 80))
+                            .foregroundColor(.gray)
 
-                    Text("No Movies library found")
-                        .font(.title2)
-                        .foregroundColor(.gray)
+                        Text("No Movies library found")
+                            .font(.title2)
+                            .foregroundColor(.gray)
+                    }
                 }
+            }
+            .navigationDestination(for: PlexMetadata.self) { media in
+                MediaDetailView(media: media)
+                    .environmentObject(authService)
             }
         }
         .task {

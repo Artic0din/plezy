@@ -54,6 +54,9 @@ struct VideoPlayerView: View {
                         print("👋 [VideoPlayerView] TVPlayerViewController disappeared for: \(media.title)")
                         playerManager.cleanup()
                     }
+
+                // Skip Intro/Credits overlay buttons
+                SkipButtonOverlay(playerManager: playerManager)
             } else if playerManager.isLoading {
                 VStack(spacing: 20) {
                     ProgressView()
@@ -155,12 +158,12 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         }
 
         #if os(tvOS)
-        // Configure content tabs when metadata is available
+        // Configure Info tab when detailed metadata is available
         if let detailedMedia = playerManager.detailedMedia {
-            configureContentTabs(controller: uiViewController, media: detailedMedia, context: context)
+            configureInfoTab(controller: uiViewController, media: detailedMedia)
         }
 
-        // Configure content proposal for next episode
+        // Configure content proposal for next episode (uses system "Up Next" UI)
         if let nextEpisode = playerManager.nextEpisode, playerManager.shouldShowContentProposal {
             configureContentProposal(controller: uiViewController, nextEpisode: nextEpisode, context: context)
         }
@@ -172,41 +175,25 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     }
 
     #if os(tvOS)
-    /// Configure content tabs (Info panel) for tvOS
-    private func configureContentTabs(controller: AVPlayerViewController, media: PlexMetadata, context: Context) {
+    /// Configure the Info tab shown when user swipes down during playback
+    /// Uses customInfoViewControllers to add an Info tab to the player
+    private func configureInfoTab(controller: AVPlayerViewController, media: PlexMetadata) {
         // Only configure once
         guard controller.customInfoViewControllers.isEmpty else { return }
 
-        // Create info tab with metadata
-        let infoVC = createInfoViewController(for: media)
-        controller.customInfoViewControllers = [infoVC]
-
-        // Add contextual actions (buttons in transport bar)
-        var actions: [UIAction] = []
-
-        // Add "More Like This" action if available
-        actions.append(UIAction(
-            title: "More Info",
-            image: UIImage(systemName: "info.circle")
-        ) { _ in
-            print("📺 [ContentTabs] More Info tapped")
-        })
-
-        controller.contextualActions = actions
-
-        print("📺 [ContentTabs] Configured info tab and contextual actions")
-    }
-
-    /// Create the info view controller for content tabs
-    private func createInfoViewController(for media: PlexMetadata) -> UIViewController {
-        let hostingController = UIHostingController(rootView: PlayerInfoView(media: media))
-        hostingController.title = "Info"
-        hostingController.tabBarItem = UITabBarItem(
+        // Create Info tab with metadata - styled to match tvOS native appearance
+        let infoVC = UIHostingController(rootView: PlayerInfoView(media: media))
+        infoVC.title = "Info"
+        infoVC.tabBarItem = UITabBarItem(
             title: "Info",
             image: UIImage(systemName: "info.circle"),
             selectedImage: UIImage(systemName: "info.circle.fill")
         )
-        return hostingController
+
+        controller.customInfoViewControllers = [infoVC]
+        // Note: No contextualActions set - removes the "More Info" button from transport bar
+
+        print("📺 [Player] Configured Info tab for: \(media.title)")
     }
 
     /// Configure content proposal for next episode
@@ -320,17 +307,19 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Player Info View (Content Tab)
+// MARK: - Player Info View (tvOS Info Tab)
 
+/// Info view displayed in AVPlayerViewController's Info tab when user swipes down
+/// Styled to match native tvOS appearance - clean, minimal, no custom overlays
 struct PlayerInfoView: View {
     let media: PlexMetadata
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 // Title
                 Text(displayTitle)
-                    .font(.largeTitle)
+                    .font(.title)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
 
@@ -338,19 +327,19 @@ struct PlayerInfoView: View {
                 if media.type == "episode" {
                     if let showTitle = media.grandparentTitle {
                         Text(showTitle)
-                            .font(.title2)
-                            .foregroundColor(.gray)
+                            .font(.headline)
+                            .foregroundColor(.secondary)
                     }
 
                     if let season = media.parentIndex, let episode = media.index {
                         Text("Season \(season), Episode \(episode)")
-                            .font(.headline)
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                 }
 
                 // Metadata row
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     if let year = media.year {
                         Text(String(year))
                             .foregroundColor(.secondary)
@@ -363,9 +352,9 @@ struct PlayerInfoView: View {
 
                     if let rating = media.contentRating {
                         Text(rating)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.secondary.opacity(0.3))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.2))
                             .cornerRadius(4)
                     }
 
@@ -373,63 +362,198 @@ struct PlayerInfoView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill")
                                 .foregroundColor(.yellow)
+                                .font(.caption)
                             Text(String(format: "%.1f", audienceRating))
                         }
                     }
                 }
                 .font(.subheadline)
+                .foregroundColor(.secondary)
 
                 // Synopsis
                 if let summary = media.summary {
                     Text(summary)
                         .font(.body)
-                        .foregroundColor(.white.opacity(0.9))
+                        .foregroundColor(.white.opacity(0.85))
                         .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // Cast & Crew
+                // Cast
                 if let roles = media.role, !roles.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("Cast")
-                            .font(.headline)
-                            .foregroundColor(.white)
-
-                        Text(roles.prefix(5).map { $0.tag }.joined(separator: ", "))
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+
+                        Text(roles.prefix(6).map { $0.tag }.joined(separator: ", "))
+                            .font(.callout)
+                            .foregroundColor(.white.opacity(0.9))
                     }
                 }
 
+                // Director
                 if let directors = media.director, !directors.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("Director")
-                            .font(.headline)
-                            .foregroundColor(.white)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
 
                         Text(directors.map { $0.tag }.joined(separator: ", "))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .font(.callout)
+                            .foregroundColor(.white.opacity(0.9))
                     }
                 }
 
-                Spacer()
+                // Studio
+                if let studio = media.studio {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Studio")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+
+                        Text(studio)
+                            .font(.callout)
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
             }
-            .padding(40)
+            .padding(32)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color.black)
     }
 
     private var displayTitle: String {
-        if media.type == "episode" {
-            return media.title
-        }
-        return media.title
+        media.title
     }
 
     private func formatDuration(_ ms: Int) -> String {
         let mins = ms / 1000 / 60
         let hrs = mins / 60
-        return hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
+        if hrs > 0 {
+            return "\(hrs)h \(mins % 60)m"
+        }
+        return "\(mins)m"
+    }
+}
+
+// MARK: - Skip Button Overlay
+
+/// Overlay view for Skip Intro and Skip Credits buttons
+/// Positioned at bottom-right to match Netflix/Apple TV+ style
+struct SkipButtonOverlay: View {
+    @ObservedObject var playerManager: VideoPlayerManager
+    @FocusState private var isSkipIntroFocused: Bool
+    @FocusState private var isSkipCreditsFocused: Bool
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 16) {
+                    // Skip Intro button
+                    if playerManager.showSkipIntroButton {
+                        Button {
+                            playerManager.skipIntro()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "forward.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Text("Skip Intro")
+                                    .font(.system(size: 24, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .buttonStyle(SkipButtonStyle())
+                        .focused($isSkipIntroFocused)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                    }
+
+                    // Skip Credits button
+                    if playerManager.showSkipCreditsButton {
+                        Button {
+                            playerManager.skipCredits()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "forward.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Text("Skip Credits")
+                                    .font(.system(size: 24, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .buttonStyle(SkipButtonStyle())
+                        .focused($isSkipCreditsFocused)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                    }
+                }
+                .padding(.trailing, 80)
+                .padding(.bottom, 120)
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.showSkipIntroButton)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.showSkipCreditsButton)
+    }
+}
+
+/// Button style for Skip Intro/Credits buttons
+/// Uses Liquid Glass styling to match the rest of the app
+struct SkipButtonStyle: ButtonStyle {
+    @Environment(\.isFocused) private var isFocused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 32)
+            .padding(.vertical, 16)
+            .background(
+                ZStack {
+                    // Dark dimming layer for contrast
+                    Capsule()
+                        .fill(Color.black.opacity(0.5))
+
+                    // Clear glass material
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.9))
+
+                    // Beacon gradient on focus
+                    if isFocused {
+                        Capsule()
+                            .fill(Color.beaconGradient)
+                            .opacity(0.35)
+                    }
+                }
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: isFocused ? [.white.opacity(0.6), .white.opacity(0.3)] : [.white.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: isFocused ? 2 : 1
+                    )
+            )
+            .shadow(
+                color: isFocused ? Color.beaconPurple.opacity(0.5) : Color.black.opacity(0.4),
+                radius: isFocused ? 20 : 10,
+                x: 0,
+                y: isFocused ? 8 : 4
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : (isFocused ? 1.05 : 1.0))
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
     }
 }
 
@@ -453,6 +577,12 @@ class VideoPlayerManager: ObservableObject {
     @Published var detailedMedia: PlexMetadata?
     @Published var shouldShowContentProposal: Bool = false
     @Published var playbackMethod: PlexAPIClient.PlaybackDecision.PlaybackMethod = .directPlay
+
+    // Skip intro state
+    @Published var introMarker: PlexMediaMarker?
+    @Published var showSkipIntroButton: Bool = false
+    @Published var creditsMarker: PlexMediaMarker?
+    @Published var showSkipCreditsButton: Bool = false
 
     // Time at which to show content proposal (30 seconds before end)
     var contentProposalTime: CMTime {
@@ -603,10 +733,10 @@ class VideoPlayerManager: ObservableObject {
                 await fetchNextEpisode(client: client)
             }
 
-            // Configure skip intro if available (tvOS 16.0+)
+            // Configure skip intro/credits markers (tvOS 16.0+)
             #if os(tvOS)
             if #available(tvOS 16.0, *) {
-                await configureSkipIntro(for: ratingKey, client: client)
+                await configureSkipMarkers(for: ratingKey, client: client)
             }
             #endif
 
@@ -770,14 +900,28 @@ class VideoPlayerManager: ObservableObject {
     private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
         var nowPlayingInfo: [String: Any] = [:]
 
-        // Title and subtitle for tvOS display
+        // Title and subtitle for tvOS Now Playing display
         if media.type == "episode" {
+            // For TV episodes: Show name as title, episode info as artist/subtitle
             if let showTitle = media.grandparentTitle {
                 nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
                 nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
             }
+            // Episode info as artist (shows as subtitle in some contexts)
+            if let season = media.parentIndex, let episode = media.index {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = "S\(season), E\(episode) – \(media.title)"
+            } else {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = media.title
+            }
         } else {
+            // For movies: Movie title as title, studio as artist
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
+            if let studio = media.studio {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = studio
+            }
+            if let year = media.year {
+                nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = "\(year)"
+            }
         }
 
         // Duration
@@ -786,12 +930,15 @@ class VideoPlayerManager: ObservableObject {
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
         }
 
-        // External content identifiers for tvOS integration
+        // External metadata for tvOS transport bar title view and Info panel
+        // This populates the system-standard AVPlayerViewController title and Info tab
         #if os(tvOS)
         if #available(tvOS 16.0, *) {
             var externalMetadata: [AVMetadataItem] = []
 
-            // Set title
+            // Title - displayed as main title in transport bar
+            // For episodes: show the series name
+            // For movies: show the movie title
             let titleItem = AVMutableMetadataItem()
             titleItem.identifier = .commonIdentifierTitle
             if media.type == "episode", let showTitle = media.grandparentTitle {
@@ -799,35 +946,109 @@ class VideoPlayerManager: ObservableObject {
             } else {
                 titleItem.value = media.title as NSString
             }
-            titleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
             externalMetadata.append(titleItem)
 
-            // Set subtitle for TV episodes: "Sx, Ex - Episode Name"
+            // Subtitle / Info line - displayed below title in transport bar
+            // For TV episodes: "Sx, Ex – Episode Name"
+            // For movies: year and content rating
+            let subtitleItem = AVMutableMetadataItem()
+            subtitleItem.identifier = .iTunesMetadataTrackSubTitle
             if media.type == "episode" {
-                let subtitleItem = AVMutableMetadataItem()
-                subtitleItem.identifier = .iTunesMetadataTrackSubTitle
                 if let season = media.parentIndex, let episode = media.index {
-                    subtitleItem.value = "S\(season), E\(episode) - \(media.title)" as NSString
+                    subtitleItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
                 } else {
                     subtitleItem.value = media.title as NSString
                 }
-                subtitleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
-                externalMetadata.append(subtitleItem)
+            } else {
+                // For movies, show year and rating as subtitle
+                var movieSubtitle = ""
+                if let year = media.year {
+                    movieSubtitle = "\(year)"
+                }
+                if let rating = media.contentRating {
+                    movieSubtitle += movieSubtitle.isEmpty ? rating : " • \(rating)"
+                }
+                if let duration = media.duration {
+                    let mins = duration / 1000 / 60
+                    let hrs = mins / 60
+                    let durationStr = hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
+                    movieSubtitle += movieSubtitle.isEmpty ? durationStr : " • \(durationStr)"
+                }
+                subtitleItem.value = movieSubtitle as NSString
             }
+            externalMetadata.append(subtitleItem)
 
-            // Add description
+            // Also set as "album artist" which some tvOS versions use for subtitle display
+            let artistItem = AVMutableMetadataItem()
+            artistItem.identifier = .commonIdentifierArtist
+            if media.type == "episode" {
+                if let season = media.parentIndex, let episode = media.index {
+                    artistItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
+                } else {
+                    artistItem.value = media.title as NSString
+                }
+            } else if let studio = media.studio {
+                artistItem.value = studio as NSString
+            }
+            externalMetadata.append(artistItem)
+
+            // Description / Synopsis for Info panel
             if let summary = media.summary {
                 let descItem = AVMutableMetadataItem()
                 descItem.identifier = .commonIdentifierDescription
                 descItem.value = summary as NSString
-                descItem.dataType = kCMMetadataBaseDataType_UTF8 as String
                 externalMetadata.append(descItem)
             }
 
-            // Set external metadata on player item
+            // Genre
+            if let genres = media.genre, let firstGenre = genres.first {
+                let genreItem = AVMutableMetadataItem()
+                genreItem.identifier = .quickTimeMetadataGenre
+                genreItem.value = firstGenre.tag as NSString
+                externalMetadata.append(genreItem)
+            }
+
+            // Year / Creation date (used for sorting, not display)
+            if let year = media.year {
+                let yearItem = AVMutableMetadataItem()
+                yearItem.identifier = .commonIdentifierCreationDate
+                yearItem.value = "\(year)" as NSString
+                externalMetadata.append(yearItem)
+            }
+
+            // Content Rating (e.g., "TV-MA", "PG-13")
+            if let contentRating = media.contentRating {
+                let ratingItem = AVMutableMetadataItem()
+                ratingItem.identifier = .iTunesMetadataContentRating
+                ratingItem.value = contentRating as NSString
+                externalMetadata.append(ratingItem)
+            }
+
+            // Studio/Network
+            if let studio = media.studio {
+                let studioItem = AVMutableMetadataItem()
+                studioItem.identifier = .iTunesMetadataPublisher
+                studioItem.value = studio as NSString
+                externalMetadata.append(studioItem)
+            }
+
+            // Artwork identifier for the transport bar artwork (loaded separately)
+            // This helps tvOS associate the artwork with the metadata
+            if let artPath = media.art ?? media.thumb {
+                let artworkItem = AVMutableMetadataItem()
+                artworkItem.identifier = .commonIdentifierArtworkURI
+                var artURLString = baseURL.absoluteString + artPath
+                if let token = token {
+                    artURLString += "?X-Plex-Token=\(token)"
+                }
+                artworkItem.value = artURLString as NSString
+                externalMetadata.append(artworkItem)
+            }
+
+            // Set external metadata on player item for transport bar and Info panel
             if let playerItem = self.playerItem {
                 playerItem.externalMetadata = externalMetadata
-                print("🎬 [Player] Set external metadata with \(externalMetadata.count) items")
+                print("🎬 [Player] Set external metadata: title='\(titleItem.value ?? "nil")', subtitle='\(subtitleItem.value ?? "nil")'")
             }
         }
         #endif
@@ -853,19 +1074,45 @@ class VideoPlayerManager: ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             if let image = UIImage(data: data) {
-                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-                info[MPMediaItemPropertyArtwork] = artwork
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                print("🎬 [Player] Loaded artwork")
+                // Create artwork on main actor, but the artwork's requestHandler closure
+                // will be called by MediaPlayer on its own queue. We must ensure the closure
+                // is completely nonisolated and only captures the UIImage value.
+                await updateNowPlayingArtwork(with: image)
             }
         } catch {
             print("⚠️ [Player] Failed to load artwork: \(error)")
         }
     }
 
+    /// Update Now Playing with artwork - this must be on MainActor
+    /// but the MPMediaItemArtwork creation is delegated to a nonisolated helper
+    @MainActor
+    private func updateNowPlayingArtwork(with image: UIImage) {
+        let artwork = Self.makeArtwork(from: image)
+        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        info[MPMediaItemPropertyArtwork] = artwork
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        print("🎬 [Player] Loaded artwork")
+    }
+
+    /// Creates MPMediaItemArtwork with a non-isolated closure.
+    /// This MUST be nonisolated because MPMediaItemArtwork's requestHandler
+    /// is called on Apple's MediaPlayer queue, not the main actor.
+    /// If the closure were @MainActor-isolated, it would crash with dispatch_assert_queue_fail.
+    ///
+    /// CRITICAL: This is a static function that captures ONLY the image parameter.
+    /// The closure `{ _ in image }` must not reference `self` or any actor-isolated state.
+    nonisolated private static func makeArtwork(from image: UIImage) -> MPMediaItemArtwork {
+        // Capture image size and the image itself before creating the closure
+        let imageSize = image.size
+        // The closure is intentionally simple - it just returns the pre-loaded image.
+        // This avoids any actor hops when MediaPlayer calls it on its internal queue.
+        return MPMediaItemArtwork(boundsSize: imageSize) { _ in image }
+    }
+
     private func setupProgressTracking(client: PlexAPIClient, player: AVPlayer, ratingKey: String) {
-        let interval = CMTime(seconds: 30, preferredTimescale: 600)
+        // Use shorter interval for responsive skip button display
+        let interval = CMTime(seconds: 1, preferredTimescale: 600)
 
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self,
@@ -878,22 +1125,51 @@ class VideoPlayerManager: ObservableObject {
             let totalDuration = CMTimeGetSeconds(duration)
             let timeRemaining = totalDuration - currentTime
 
-            // Update timeline
-            Task {
-                do {
-                    try await client.updateTimeline(
-                        ratingKey: ratingKey,
-                        state: player.rate > 0 ? .playing : .paused,
-                        time: Int(currentTime * 1000),
-                        duration: Int(totalDuration * 1000)
-                    )
-
-                    // Mark as watched when 90% complete
-                    if currentTime / totalDuration > 0.9 {
-                        try await client.scrobble(ratingKey: ratingKey)
+            // Check if within intro window - show Skip Intro button
+            if let intro = self.introMarker {
+                let inIntro = currentTime >= intro.start && currentTime < intro.end
+                if inIntro != self.showSkipIntroButton {
+                    Task { @MainActor in
+                        self.showSkipIntroButton = inIntro
+                        if inIntro {
+                            print("⏩ [SkipIntro] Showing button - in intro window")
+                        }
                     }
-                } catch {
-                    print("Error updating timeline: \(error)")
+                }
+            }
+
+            // Check if within credits window - show Skip Credits button
+            if let credits = self.creditsMarker {
+                let inCredits = currentTime >= credits.start && currentTime < credits.end
+                if inCredits != self.showSkipCreditsButton {
+                    Task { @MainActor in
+                        self.showSkipCreditsButton = inCredits
+                        if inCredits {
+                            print("⏩ [SkipCredits] Showing button - in credits window")
+                        }
+                    }
+                }
+            }
+
+            // Update timeline every 30 seconds (not every second)
+            let shouldUpdateTimeline = Int(currentTime) % 30 == 0
+            if shouldUpdateTimeline {
+                Task {
+                    do {
+                        try await client.updateTimeline(
+                            ratingKey: ratingKey,
+                            state: player.rate > 0 ? .playing : .paused,
+                            time: Int(currentTime * 1000),
+                            duration: Int(totalDuration * 1000)
+                        )
+
+                        // Mark as watched when 90% complete
+                        if currentTime / totalDuration > 0.9 {
+                            try await client.scrobble(ratingKey: ratingKey)
+                        }
+                    } catch {
+                        print("Error updating timeline: \(error)")
+                    }
                 }
             }
 
@@ -1099,16 +1375,21 @@ class VideoPlayerManager: ObservableObject {
         #endif
     }
 
-    // MARK: - Skip Intro
+    // MARK: - Skip Intro/Credits
 
     @available(tvOS 16.0, *)
-    private func configureSkipIntro(for ratingKey: String, client: PlexAPIClient) async {
+    private func configureSkipMarkers(for ratingKey: String, client: PlexAPIClient) async {
         do {
             let markers = try await client.getMediaMarkers(ratingKey: ratingKey)
 
-            if let introMarker = markers.first(where: { $0.type == "intro" }) {
-                let startTime = CMTime(seconds: introMarker.start, preferredTimescale: 600)
-                let endTime = CMTime(seconds: introMarker.end, preferredTimescale: 600)
+            // Store intro marker for skip button
+            if let intro = markers.first(where: { $0.type == "intro" }) {
+                self.introMarker = intro
+                print("⏩ [SkipIntro] Found intro marker at \(intro.start)s - \(intro.end)s")
+
+                // Also configure as interstitial for timeline display
+                let startTime = CMTime(seconds: intro.start, preferredTimescale: 600)
+                let endTime = CMTime(seconds: intro.end, preferredTimescale: 600)
                 let duration = CMTimeSubtract(endTime, startTime)
                 let timeRange = CMTimeRange(start: startTime, duration: duration)
 
@@ -1116,13 +1397,36 @@ class VideoPlayerManager: ObservableObject {
                 if let playerItem = self.playerItem {
                     let interstitial = AVInterstitialTimeRange(timeRange: timeRange)
                     playerItem.interstitialTimeRanges = [interstitial]
-                    print("⏩ [SkipIntro] Configured at \(introMarker.start)s - \(introMarker.end)s")
                 }
                 #endif
             }
+
+            // Store credits marker for skip button
+            if let credits = markers.first(where: { $0.type == "credits" }) {
+                self.creditsMarker = credits
+                print("⏩ [SkipCredits] Found credits marker at \(credits.start)s - \(credits.end)s")
+            }
         } catch {
-            print("⚠️ [SkipIntro] Failed to fetch intro markers: \(error)")
+            print("⚠️ [SkipMarkers] Failed to fetch markers: \(error)")
         }
+    }
+
+    /// Skip intro - seek to end of intro marker
+    func skipIntro() {
+        guard let intro = introMarker else { return }
+        let seekTime = CMTime(seconds: intro.end, preferredTimescale: 600)
+        player?.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        showSkipIntroButton = false
+        print("⏩ [SkipIntro] Skipped to \(intro.end)s")
+    }
+
+    /// Skip credits - seek to end of credits marker (triggers content proposal if available)
+    func skipCredits() {
+        guard let credits = creditsMarker else { return }
+        let seekTime = CMTime(seconds: credits.end, preferredTimescale: 600)
+        player?.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        showSkipCreditsButton = false
+        print("⏩ [SkipCredits] Skipped to \(credits.end)s")
     }
 
     // MARK: - Cleanup
@@ -1215,7 +1519,8 @@ class VideoPlayerManager: ObservableObject {
         director: nil,
         writer: nil,
         country: nil,
-        Image: nil
+        Image: nil,
+        Guid: nil
     ))
     .environmentObject(PlexAuthService())
 }

@@ -53,8 +53,8 @@ struct PlexServer: Codable, Identifiable, Equatable {
     let platformVersion: String
     let device: String
     let clientIdentifier: String
-    let createdAt: Date?
-    let lastSeenAt: Date?
+    let createdAt: Int?      // Unix timestamp (not ISO8601 Date)
+    let lastSeenAt: Int?     // Unix timestamp (not ISO8601 Date)
     let provides: String
     let ownerId: Int?
     let sourceTitle: String?
@@ -71,11 +71,25 @@ struct PlexServer: Codable, Identifiable, Equatable {
     let natLoopbackSupported: Bool?
     let connections: [PlexConnection]
 
+    // Store the verified working URL after connection testing
+    var workingURL: URL?
+
     var id: String { clientIdentifier }
 
     // Computed properties with default values
     var isOwned: Bool { owned ?? false }
     var isHome: Bool { home ?? false }
+
+    // Computed Date properties from Unix timestamps
+    var createdAtDate: Date? {
+        guard let timestamp = createdAt else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(timestamp))
+    }
+
+    var lastSeenAtDate: Date? {
+        guard let timestamp = lastSeenAt else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(timestamp))
+    }
 
     enum CodingKeys: String, CodingKey {
         case name, product, productVersion, platform, platformVersion
@@ -84,6 +98,161 @@ struct PlexServer: Codable, Identifiable, Equatable {
         case owned, home, synced, relay, presence, httpsRequired
         case publicAddressMatches, dnsRebindingProtection, natLoopbackSupported
         case connections
+        // workingURL is not encoded/decoded - it's set at runtime
+    }
+
+    // Custom initializer to support workingURL and flexible date decoding
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        product = try container.decode(String.self, forKey: .product)
+        productVersion = try container.decode(String.self, forKey: .productVersion)
+        platform = try container.decode(String.self, forKey: .platform)
+        platformVersion = try container.decode(String.self, forKey: .platformVersion)
+        device = try container.decode(String.self, forKey: .device)
+        clientIdentifier = try container.decode(String.self, forKey: .clientIdentifier)
+
+        // Handle createdAt - can be Int (Unix timestamp) or String (ISO8601)
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .createdAt) {
+            createdAt = intValue
+        } else if let stringValue = try? container.decodeIfPresent(String.self, forKey: .createdAt) {
+            createdAt = Self.parseISO8601ToUnix(stringValue)
+        } else {
+            createdAt = nil
+        }
+
+        // Handle lastSeenAt - can be Int (Unix timestamp) or String (ISO8601)
+        if let intValue = try? container.decodeIfPresent(Int.self, forKey: .lastSeenAt) {
+            lastSeenAt = intValue
+        } else if let stringValue = try? container.decodeIfPresent(String.self, forKey: .lastSeenAt) {
+            lastSeenAt = Self.parseISO8601ToUnix(stringValue)
+        } else {
+            lastSeenAt = nil
+        }
+
+        provides = try container.decode(String.self, forKey: .provides)
+        ownerId = try container.decodeIfPresent(Int.self, forKey: .ownerId)
+        sourceTitle = try container.decodeIfPresent(String.self, forKey: .sourceTitle)
+        publicAddress = try container.decodeIfPresent(String.self, forKey: .publicAddress)
+        accessToken = try container.decodeIfPresent(String.self, forKey: .accessToken)
+        owned = try container.decodeIfPresent(Bool.self, forKey: .owned)
+        home = try container.decodeIfPresent(Bool.self, forKey: .home)
+        synced = try container.decodeIfPresent(Bool.self, forKey: .synced)
+        relay = try container.decodeIfPresent(Bool.self, forKey: .relay)
+        presence = try container.decodeIfPresent(Bool.self, forKey: .presence)
+        httpsRequired = try container.decodeIfPresent(Bool.self, forKey: .httpsRequired)
+        publicAddressMatches = try container.decodeIfPresent(Bool.self, forKey: .publicAddressMatches)
+        dnsRebindingProtection = try container.decodeIfPresent(Bool.self, forKey: .dnsRebindingProtection)
+        natLoopbackSupported = try container.decodeIfPresent(Bool.self, forKey: .natLoopbackSupported)
+        connections = try container.decode([PlexConnection].self, forKey: .connections)
+        workingURL = nil  // Set at runtime after connection testing
+    }
+
+    /// Parse ISO8601 date string to Unix timestamp
+    private static func parseISO8601ToUnix(_ dateString: String) -> Int? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: dateString) {
+            return Int(date.timeIntervalSince1970)
+        }
+        // Try without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: dateString) {
+            return Int(date.timeIntervalSince1970)
+        }
+        return nil
+    }
+
+    // Memberwise initializer for creating copies with workingURL
+    init(
+        name: String,
+        product: String,
+        productVersion: String,
+        platform: String,
+        platformVersion: String,
+        device: String,
+        clientIdentifier: String,
+        createdAt: Int?,
+        lastSeenAt: Int?,
+        provides: String,
+        ownerId: Int?,
+        sourceTitle: String?,
+        publicAddress: String?,
+        accessToken: String?,
+        owned: Bool?,
+        home: Bool?,
+        synced: Bool?,
+        relay: Bool?,
+        presence: Bool?,
+        httpsRequired: Bool?,
+        publicAddressMatches: Bool?,
+        dnsRebindingProtection: Bool?,
+        natLoopbackSupported: Bool?,
+        connections: [PlexConnection],
+        workingURL: URL? = nil
+    ) {
+        self.name = name
+        self.product = product
+        self.productVersion = productVersion
+        self.platform = platform
+        self.platformVersion = platformVersion
+        self.device = device
+        self.clientIdentifier = clientIdentifier
+        self.createdAt = createdAt
+        self.lastSeenAt = lastSeenAt
+        self.provides = provides
+        self.ownerId = ownerId
+        self.sourceTitle = sourceTitle
+        self.publicAddress = publicAddress
+        self.accessToken = accessToken
+        self.owned = owned
+        self.home = home
+        self.synced = synced
+        self.relay = relay
+        self.presence = presence
+        self.httpsRequired = httpsRequired
+        self.publicAddressMatches = publicAddressMatches
+        self.dnsRebindingProtection = dnsRebindingProtection
+        self.natLoopbackSupported = natLoopbackSupported
+        self.connections = connections
+        self.workingURL = workingURL
+    }
+
+    /// Create a copy of this server with a verified working URL
+    func withWorkingURL(_ url: URL) -> PlexServer {
+        PlexServer(
+            name: name,
+            product: product,
+            productVersion: productVersion,
+            platform: platform,
+            platformVersion: platformVersion,
+            device: device,
+            clientIdentifier: clientIdentifier,
+            createdAt: createdAt,
+            lastSeenAt: lastSeenAt,
+            provides: provides,
+            ownerId: ownerId,
+            sourceTitle: sourceTitle,
+            publicAddress: publicAddress,
+            accessToken: accessToken,
+            owned: owned,
+            home: home,
+            synced: synced,
+            relay: relay,
+            presence: presence,
+            httpsRequired: httpsRequired,
+            publicAddressMatches: publicAddressMatches,
+            dnsRebindingProtection: dnsRebindingProtection,
+            natLoopbackSupported: natLoopbackSupported,
+            connections: connections,
+            workingURL: url
+        )
+    }
+
+    /// Get the best available base URL for this server
+    /// Prefers workingURL (verified during connection), falls back to first connection
+    var bestBaseURL: URL? {
+        workingURL ?? connections.first?.url
     }
 }
 
@@ -155,13 +324,22 @@ struct PlexLibrary: Codable, Identifiable {
     }
 }
 
-struct PlexMetadata: Codable, Identifiable, Equatable {
+struct PlexMetadata: Codable, Identifiable, Equatable, Hashable {
     static func == (lhs: PlexMetadata, rhs: PlexMetadata) -> Bool {
         // Compare by ratingKey if available, otherwise by key
         if let lhsRating = lhs.ratingKey, let rhsRating = rhs.ratingKey {
             return lhsRating == rhsRating
         }
         return lhs.key == rhs.key
+    }
+
+    func hash(into hasher: inout Hasher) {
+        // Hash by ratingKey if available, otherwise by key (matches == logic)
+        if let ratingKey = ratingKey {
+            hasher.combine(ratingKey)
+        } else {
+            hasher.combine(key)
+        }
     }
 
     let ratingKey: String?
@@ -224,7 +402,22 @@ struct PlexMetadata: Codable, Identifiable, Equatable {
     // Images (for clearLogo, etc.)
     var Image: [PlexImage]?
 
+    // GUIDs (for TMDB, IMDB, TVDB identifiers)
+    let Guid: [PlexGuid]?
+
     var id: String { ratingKey ?? key }
+
+    /// Extract TMDB ID from the Guid array (looks for "tmdb://12345" format)
+    var tmdbId: Int? {
+        guard let guids = Guid else { return nil }
+        for guid in guids {
+            if guid.id.hasPrefix("tmdb://") {
+                let idString = String(guid.id.dropFirst("tmdb://".count))
+                return Int(idString)
+            }
+        }
+        return nil
+    }
 
     // Extract clearLogo from Image array
     var clearLogo: String? {
@@ -306,6 +499,7 @@ struct PlexMetadata: Codable, Identifiable, Equatable {
         case writer = "Writer"
         case country = "Country"
         case Image
+        case Guid  // Array of GUIDs (tmdb://, imdb://, tvdb://)
     }
 }
 
@@ -470,6 +664,11 @@ struct PlexTag: Codable {
 struct PlexImage: Codable {
     let type: String
     let url: String
+}
+
+/// Represents a GUID from Plex metadata (e.g., "tmdb://12345", "imdb://tt1234567")
+struct PlexGuid: Codable {
+    let id: String
 }
 
 // MARK: - Hubs (Content Discovery)

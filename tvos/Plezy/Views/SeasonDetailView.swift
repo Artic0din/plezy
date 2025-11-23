@@ -313,8 +313,7 @@ struct EpisodeRow: View {
 
     private var thumbnailURL: URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let thumb = episode.thumb else {
             return nil
         }
@@ -404,7 +403,8 @@ struct EpisodeRow: View {
             director: nil,
             writer: nil,
             country: nil,
-            Image: nil
+            Image: nil,
+            Guid: nil
         ),
         show: PlexMetadata(
             ratingKey: "0",
@@ -455,7 +455,8 @@ struct EpisodeRow: View {
             director: nil,
             writer: nil,
             country: nil,
-            Image: nil
+            Image: nil,
+            Guid: nil
         )
     )
     .environmentObject(PlexAuthService())

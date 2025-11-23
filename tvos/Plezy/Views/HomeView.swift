@@ -15,7 +15,8 @@ struct HomeView: View {
     @State private var recentlyAdded: [PlexMetadata] = []
     @State private var hubs: [PlexHub] = []
     @State private var isLoading = true
-    @State private var selectedMedia: PlexMetadata?
+    // Navigation path for hierarchical navigation (detail views)
+    @State private var navigationPath = NavigationPath()
     @State private var playingMedia: PlexMetadata?
     @State private var showServerSelection = false
     @State private var noServerSelected = false
@@ -25,39 +26,60 @@ struct HomeView: View {
     @State private var heroTimer: Timer?
     @State private var scrollOffset: CGFloat = 0
     @State private var shouldShowHero = true
+    @State private var isReturningFromDetail = false
 
     private let heroDisplayDuration: TimeInterval = 7.0
-    private let heroTimerInterval: TimeInterval = 0.05
+    private let heroTimerInterval: TimeInterval = 0.1  // 100ms for efficiency (was 50ms)
 
     private let cache = CacheService.shared
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        NavigationStack(path: $navigationPath) {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            if isLoading {
-                HomeViewSkeleton()
-            } else if let error = errorMessage {
-                errorView(error: error)
-            } else if noServerSelected {
-                noServerView
-            } else {
-                fullScreenHeroLayout
+                if isLoading {
+                    HomeViewSkeleton()
+                } else if let error = errorMessage {
+                    errorView(error: error)
+                } else if noServerSelected {
+                    noServerView
+                } else {
+                    fullScreenHeroLayout
+                }
+
+                // Offline banner overlay
+                VStack {
+                    OfflineBanner()
+                    Spacer()
+                }
             }
-
-            // Offline banner overlay
-            VStack {
-                OfflineBanner()
-                Spacer()
+            .navigationDestination(for: PlexMetadata.self) { media in
+                MediaDetailView(media: media)
+                    .environmentObject(authService)
+                    .onAppear {
+                        print("📱 [HomeView] MediaDetailView appeared for: \(media.title)")
+                    }
+                    .onDisappear {
+                        // Defer refresh to allow focus to settle after navigation pop
+                        print("📱 [HomeView] MediaDetailView disappeared, deferring refresh")
+                        Task {
+                            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay
+                            await refreshOnDeck()
+                        }
+                    }
             }
         }
         .onAppear {
-            print("🏠 [HomeView] View appeared")
+            print("🏠 [HomeView] View appeared, isReturningFromDetail: \(isReturningFromDetail)")
             startHeroTimer()
-            // Refresh Continue Watching on every appear to ensure up-to-date data
-            Task {
-                await refreshOnDeck()
+            // Only refresh if not returning from detail view (prevents focus loss flash)
+            if !isReturningFromDetail {
+                Task {
+                    await refreshOnDeck()
+                }
             }
+            isReturningFromDetail = false
         }
         .onDisappear {
             stopHeroTimer()
@@ -66,20 +88,18 @@ struct HomeView: View {
             print("🏠 [HomeView] .task modifier triggered")
             await loadContent()
         }
-        .fullScreenCover(item: $selectedMedia) { media in
-            let _ = print("📱 [HomeView] FullScreenCover presenting MediaDetailView for: \(media.title)")
-            MediaDetailView(media: media)
-                .environmentObject(authService)
-                .onAppear {
-                    print("📱 [HomeView] MediaDetailView appeared for: \(media.title)")
-                }
-        }
+        // Video player remains fullScreenCover (modal playback with AVPlayerViewController)
         .fullScreenCover(item: $playingMedia) { media in
             let _ = print("🎬 [HomeView] FullScreenCover presenting VideoPlayerView for: \(media.title)")
             VideoPlayerView(media: media)
                 .environmentObject(authService)
                 .onAppear {
                     print("🎬 [HomeView] VideoPlayerView appeared for: \(media.title)")
+                }
+                .onDisappear {
+                    // Mark that we're returning to prevent immediate refresh that causes focus flash
+                    isReturningFromDetail = true
+                    print("🎬 [HomeView] VideoPlayerView disappeared, deferring refresh")
                 }
         }
         .sheet(isPresented: $showServerSelection) {
@@ -104,10 +124,11 @@ struct HomeView: View {
             }
         }
         .onChange(of: playingMedia) { oldValue, newValue in
-            // Refresh Continue Watching when returning from video playback
+            // Refresh Continue Watching when returning from video playback (with delay for focus)
             if oldValue != nil && newValue == nil {
-                print("🏠 [HomeView] Video player dismissed, refreshing Continue Watching...")
+                print("🏠 [HomeView] Video player dismissed, deferring Continue Watching refresh...")
                 Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay for focus
                     await refreshOnDeck()
                 }
             }
@@ -154,20 +175,38 @@ struct HomeView: View {
 
                         // Continue Watching section - exactly 4 cards visible
                         if !onDeck.isEmpty {
-                            ContinueWatchingRow(items: onDeck) { item in
-                                playingMedia = item
-                            }
+                            ContinueWatchingRow(
+                                items: onDeck,
+                                onPlay: { item in
+                                    playingMedia = item
+                                },
+                                onContextAction: { action, item in
+                                    handleContextAction(action, for: item)
+                                }
+                            )
                         }
 
                         // Other hub rows - exactly 4 cards visible per row
-                        ForEach(hubs.filter {
+                        // Only filter out Continue Watching and On Deck (shown separately)
+                        // Keep "Recently Added Movies/TV" etc as they are valuable content rows
+                        let filteredHubs = hubs.filter {
                             let title = $0.title.lowercased()
-                            return !title.contains("recently added") &&
-                                   !title.contains("on deck") &&
+                            return !title.contains("on deck") &&
                                    !title.contains("continue watching")
-                        }) { hub in
+                        }
+
+                        #if DEBUG
+                        let _ = {
+                            print("🏠 [HomeView] Total hubs: \(hubs.count), Filtered hubs: \(filteredHubs.count)")
+                            for hub in filteredHubs {
+                                print("🏠 [HomeView]   Hub: '\(hub.title)' - metadata: \(hub.metadata?.count ?? 0) items")
+                            }
+                        }()
+                        #endif
+
+                        ForEach(filteredHubs) { hub in
                             HubRow(hub: hub) { item in
-                                selectedMedia = item
+                                navigationPath.append(item)
                             }
                         }
 
@@ -312,6 +351,8 @@ struct HomeView: View {
             if let recentlyAddedHub = cached.hubs.first(where: { $0.title.lowercased().contains("recently added") || $0.title.lowercased().contains("recent") }),
                let items = recentlyAddedHub.metadata {
                 self.recentlyAdded = items
+                // Prefetch hero images for smoother transitions
+                prefetchHeroImages()
             }
 
             isLoading = false
@@ -353,6 +394,8 @@ struct HomeView: View {
                let items = recentlyAddedHub.metadata {
                 self.recentlyAdded = items
                 print("🏠 [HomeView] Recently Added items: \(items.count)")
+                // Prefetch hero images for smoother transitions
+                prefetchHeroImages()
             }
 
             // Cache the results
@@ -385,6 +428,44 @@ struct HomeView: View {
         await loadContent()
     }
 
+    /// Prefetch hero images for smoother transitions
+    private func prefetchHeroImages() {
+        guard !recentlyAdded.isEmpty else { return }
+
+        // Prefetch next 3 hero images (or all if fewer)
+        let count = min(recentlyAdded.count, 3)
+        var urls: [URL] = []
+
+        for i in 0..<count {
+            if let url = artURL(for: recentlyAdded[i]) {
+                urls.append(url)
+            }
+        }
+
+        if !urls.isEmpty {
+            #if DEBUG
+            print("🖼️ [HomeView] Prefetching \(urls.count) hero images")
+            #endif
+            ImageCacheService.shared.prefetch(urls: urls)
+        }
+    }
+
+    /// Build art URL for hero image prefetching
+    private func artURL(for media: PlexMetadata) -> URL? {
+        guard let server = authService.selectedServer,
+              let baseURL = server.bestBaseURL,
+              let art = media.art else {
+            return nil
+        }
+
+        var urlString = baseURL.absoluteString + art
+        if let token = server.accessToken {
+            urlString += "?X-Plex-Token=\(token)"
+        }
+
+        return URL(string: urlString)
+    }
+
     /// Lightweight refresh of just the Continue Watching row after video playback
     private func refreshOnDeck() async {
         guard let client = authService.currentClient,
@@ -403,6 +484,53 @@ struct HomeView: View {
             print("🔄 [HomeView] Continue Watching refreshed: \(fetchedOnDeck.count) items")
         } catch {
             print("🔴 [HomeView] Error refreshing Continue Watching: \(error)")
+        }
+    }
+
+    // MARK: - Context Menu Actions
+
+    /// Handle context menu actions for Continue Watching items
+    private func handleContextAction(_ action: MediaCardContextAction, for item: PlexMetadata) {
+        guard let client = authService.currentClient,
+              let ratingKey = item.ratingKey else {
+            print("⚠️ [HomeView] Cannot perform action - missing client or ratingKey")
+            return
+        }
+
+        Task {
+            do {
+                switch action {
+                case .markWatched:
+                    try await client.markAsWatched(ratingKey: ratingKey)
+                    // Remove from local list immediately for responsive UI
+                    await MainActor.run {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            onDeck.removeAll { $0.ratingKey == ratingKey }
+                        }
+                    }
+                    print("✅ [HomeView] Marked \(item.title) as watched")
+
+                case .markUnwatched:
+                    try await client.markAsUnwatched(ratingKey: ratingKey)
+                    // Refresh to get updated state
+                    await refreshOnDeck()
+                    print("✅ [HomeView] Marked \(item.title) as unwatched")
+
+                case .removeFromContinueWatching:
+                    try await client.removeFromContinueWatching(ratingKey: ratingKey)
+                    // Remove from local list immediately for responsive UI
+                    await MainActor.run {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            onDeck.removeAll { $0.ratingKey == ratingKey }
+                        }
+                    }
+                    print("✅ [HomeView] Removed \(item.title) from Continue Watching")
+                }
+            } catch {
+                print("🔴 [HomeView] Context action failed: \(error)")
+                // Refresh to sync state
+                await refreshOnDeck()
+            }
         }
     }
 }
@@ -457,8 +585,7 @@ struct FullScreenHeroBackground: View {
 
     private func artURL(for media: PlexMetadata) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let art = media.art else {
             return nil
         }
@@ -506,7 +633,7 @@ struct FullScreenHeroOverlay: View {
             }
             .frame(height: 180, alignment: .leading) // Fixed height for logo
 
-            // Metadata line
+            // Metadata line with Liquid Glass styling
             HStack(spacing: 10) {
                 Text(item.type == "movie" ? "Movie" : "TV Show")
                     .font(.system(size: 24, weight: .medium, design: .default))
@@ -522,6 +649,24 @@ struct FullScreenHeroOverlay: View {
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.5)
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.2), Color.white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
+            )
 
             // Synopsis - grows upward when long, bottom stays anchored near Continue Watching
             if let summary = item.summary {
@@ -553,8 +698,7 @@ struct FullScreenHeroOverlay: View {
         }
 
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url else {
+              let baseURL = server.bestBaseURL else {
             return nil
         }
 

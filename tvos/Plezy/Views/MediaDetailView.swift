@@ -33,6 +33,7 @@ struct MediaDetailView: View {
 
     // Playback
     @State private var playMedia: PlexMetadata?
+    @State private var playTrailer: PlexMetadata?
 
     // Content padding (same as original cardPadding)
     private let contentPadding: CGFloat = 48
@@ -59,6 +60,7 @@ struct MediaDetailView: View {
                     trailers: trailers,
                     onPlay: handlePlay,
                     onPlayEpisode: { episode in playMedia = episode },
+                    onPlayTrailer: { trailer in playTrailer = trailer },
                     contentPadding: contentPadding
                 )
                 .environmentObject(authService)
@@ -72,6 +74,10 @@ struct MediaDetailView: View {
             VideoPlayerView(media: media)
                 .environmentObject(authService)
         }
+        .fullScreenCover(item: $playTrailer) { trailer in
+            VideoPlayerView(media: trailer)
+                .environmentObject(authService)
+        }
         .onChange(of: playMedia) { oldValue, newValue in
             // Refresh episodes when returning from video playback
             if oldValue != nil && newValue == nil {
@@ -81,6 +87,27 @@ struct MediaDetailView: View {
                 }
             }
         }
+        .onDisappear {
+            // Clear state on dismiss to free memory
+            clearState()
+        }
+    }
+
+    // MARK: - State Management
+
+    private func clearState() {
+        detailedMedia = nil
+        seasons = []
+        allEpisodes = []
+        selectedSeason = nil
+        onDeckEpisode = nil
+        trailers = []
+        focusedEpisode = nil
+        playMedia = nil
+        playTrailer = nil
+        #if DEBUG
+        print("📺 [MediaDetailView] State cleared on dismiss")
+        #endif
     }
 
     // MARK: - Hero Backdrop (Full-screen, unblurred, not globally dimmed)
@@ -128,8 +155,7 @@ struct MediaDetailView: View {
 
     private func artworkURL(for path: String?) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let path = path else { return nil }
         var urlString = baseURL.absoluteString + path
         if let token = server.accessToken {
@@ -162,13 +188,18 @@ struct MediaDetailView: View {
         defer { isLoading = false }
 
         do {
+            // Check for cancellation before each major operation
+            guard !Task.isCancelled else { return }
             detailedMedia = try await client.getMetadata(ratingKey: ratingKey)
 
+            guard !Task.isCancelled else { return }
             if media.type == "show" {
                 async let seasonsTask = client.getChildren(ratingKey: ratingKey)
                 async let onDeckTask = client.getOnDeck()
 
                 let (loadedSeasons, onDeckItems) = try await (seasonsTask, onDeckTask)
+                guard !Task.isCancelled else { return }
+
                 seasons = loadedSeasons
                 selectedSeason = seasons.first
                 onDeckEpisode = onDeckItems.first { $0.grandparentRatingKey == ratingKey }
@@ -176,23 +207,31 @@ struct MediaDetailView: View {
                 await loadAllEpisodes(client: client)
             }
 
+            guard !Task.isCancelled else { return }
             if media.type == "movie" {
                 if let extras = try? await client.getExtras(ratingKey: ratingKey) {
+                    guard !Task.isCancelled else { return }
                     trailers = extras.filter {
                         $0.type == "clip" && $0.title.lowercased().contains("trailer")
                     }
                 }
             }
         } catch {
-            print("Error loading details: \(error)")
+            // Don't log cancellation errors
+            if !Task.isCancelled {
+                print("Error loading details: \(error)")
+            }
         }
     }
 
     private func loadAllEpisodes(client: PlexAPIClient) async {
+        guard !Task.isCancelled else { return }
+
         await withTaskGroup(of: (Int, [PlexMetadata]).self) { group in
             for (index, season) in seasons.enumerated() {
                 group.addTask {
-                    guard let key = season.ratingKey,
+                    guard !Task.isCancelled,
+                          let key = season.ratingKey,
                           let episodes = try? await client.getChildren(ratingKey: key)
                     else { return (index, []) }
                     return (index, episodes)
@@ -200,11 +239,15 @@ struct MediaDetailView: View {
             }
 
             var results: [(Int, [PlexMetadata])] = []
-            for await result in group { results.append(result) }
+            for await result in group {
+                guard !Task.isCancelled else { return }
+                results.append(result)
+            }
             results.sort { $0.0 < $1.0 }
             allEpisodes = results.flatMap { $0.1 }
         }
 
+        guard !Task.isCancelled else { return }
         let urls = allEpisodes.compactMap { artworkURL(for: $0.thumb) }
         ImageCacheService.shared.prefetch(urls: urls)
     }
@@ -245,25 +288,38 @@ struct MediaDetailContent: View {
     let trailers: [PlexMetadata]
     let onPlay: () -> Void
     let onPlayEpisode: (PlexMetadata) -> Void
+    let onPlayTrailer: (PlexMetadata) -> Void
     let contentPadding: CGFloat
 
     @EnvironmentObject var authService: PlexAuthService
 
+    // Network logo for TV shows (fetched from TMDB)
+    @State private var networkLogoURL: URL?
+
     var body: some View {
-        // ORIGINAL INNER LAYOUT - unchanged from ShowDetailCard
+        // Stack order differs between Movie and TV Show
         VStack(alignment: .leading, spacing: 0) {
-            // HERO BLOCK: Logo + Metadata + Synopsis + Technical Details + Buttons
-            // Positioned just above the season selector
+            // HERO BLOCK: Content varies by media type
             VStack(alignment: .leading, spacing: 12) {
-                logoOrTitle
-                metadataRow          // Type | Genre
-                synopsisArea         // Description
-                technicalDetailsRow  // Rating, Year, Runtime, Resolution, Audio
-                actionButtons
+                if media.type == "show" {
+                    // TV Show: Logo/title → Media details → Other details → Synopsis → Buttons
+                    logoOrTitle
+                    mediaTypeRow         // TV Show | Content Rating | Genre | Network Logo
+                    technicalDetailsRow  // Year | Runtime | Resolution
+                    synopsisArea
+                    actionButtons
+                } else {
+                    // Movie: Logo/title → Media details → Other details → Synopsis → Buttons
+                    logoOrTitle
+                    mediaTypeRow         // Movie | Content Rating | Genre
+                    technicalDetailsRow  // Year | Runtime | Resolution | Audio
+                    synopsisArea
+                    actionButtons
+                }
             }
             .padding(.horizontal, contentPadding)
 
-            // SEASON CHIPS + EPISODES ROW
+            // SEASON CHIPS + EPISODES ROW (TV Shows only)
             if media.type == "show" && !seasons.isEmpty {
                 seasonChipsRow
                     .padding(.top, 20)
@@ -276,13 +332,38 @@ struct MediaDetailContent: View {
                 Spacer().frame(height: contentPadding)
             }
         }
-        // REMOVED: .frame(width: cardWidth, height: cardHeight)
-        // REMOVED: .background(ZStack { artwork + gradient })
-        // REMOVED: .clipShape(RoundedRectangle(...))
-        // REMOVED: .overlay(RoundedRectangle(...).strokeBorder(...))
+        // Use task(id:) so it re-runs when tmdbId becomes available after detailed metadata loads
+        .task(id: media.tmdbId) {
+            await loadNetworkLogo()
+        }
     }
 
-    // MARK: - Hero Components (ALL UNCHANGED)
+    /// Fetch network logo from TMDB for TV shows only
+    private func loadNetworkLogo() async {
+        // Only fetch for TV shows with a TMDB ID
+        guard media.type == "show", let tmdbId = media.tmdbId else {
+            #if DEBUG
+            if media.type == "show" {
+                print("🎬 [TMDB] No TMDB ID for show: \(media.title), Guid count: \(media.Guid?.count ?? 0)")
+            }
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🎬 [TMDB] Fetching network logo for TMDB ID: \(tmdbId) (\(media.title))")
+        #endif
+
+        let logoURL = await TMDBService.shared.fetchPrimaryNetworkLogoURL(forTVId: tmdbId)
+        await MainActor.run {
+            self.networkLogoURL = logoURL
+            #if DEBUG
+            print("🎬 [TMDB] Network logo URL: \(logoURL?.absoluteString ?? "nil")")
+            #endif
+        }
+    }
+
+    // MARK: - Hero Components
 
     private var logoOrTitle: some View {
         Group {
@@ -310,17 +391,51 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.8), radius: 10, x: 0, y: 4)
     }
 
-    // Row 1: Type | Genre
-    private var metadataRow: some View {
+    // Media Type Row: Type | Content Rating | Genre (+ Network Logo for TV shows)
+    private var mediaTypeRow: some View {
         HStack(spacing: 10) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
                 .foregroundColor(.white)
                 .fontWeight(.medium)
 
+            // Content Rating (cleaned - removes /au suffix)
+            if let c = media.contentRating {
+                Text("·").foregroundColor(.white.opacity(0.7))
+                Text(cleanedContentRating(c))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(4)
+            }
+
+            // Genre
             if let genres = media.genre, let firstGenre = genres.first {
                 Text("·").foregroundColor(.white.opacity(0.7))
                 Text(firstGenre.tag)
                     .foregroundColor(.white)
+            }
+
+            // Network logo for TV shows (at end of row)
+            if media.type == "show", let logoURL = networkLogoURL {
+                Text("·").foregroundColor(.white.opacity(0.7))
+                AsyncImage(url: logoURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 28)
+                            .frame(maxWidth: 80)
+                            // White glow for visibility on dark backgrounds
+                            .shadow(color: .white.opacity(0.8), radius: 1, x: 0, y: 0)
+                            .shadow(color: .white.opacity(0.4), radius: 3, x: 0, y: 0)
+                    case .failure, .empty:
+                        EmptyView()
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
             }
         }
         .font(.system(size: 24, weight: .medium))
@@ -349,43 +464,29 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.6), radius: 6, x: 0, y: 2)
     }
 
-    // Row 2: Technical details (Year, Runtime, Resolution, Audio)
+    // Technical Details Row: Year | Runtime | Resolution | Audio (movies only)
     private var technicalDetailsRow: some View {
         HStack(spacing: 10) {
-            // Rating
-            if let r = media.audienceRating {
-                Text("★ \(String(format: "%.1f", r))")
-                    .foregroundColor(.yellow)
-            }
-
-            // Content Rating (cleaned - removes /au suffix)
-            if let c = media.contentRating {
-                if media.audienceRating != nil { Text("·").foregroundColor(.white.opacity(0.6)) }
-                Text(cleanedContentRating(c))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.2))
-                    .cornerRadius(4)
-            }
-
             // Year
             if let y = media.year {
-                Text("·").foregroundColor(.white.opacity(0.6))
                 Text(String(y))
                     .foregroundColor(.white)
             }
 
             // Runtime
             if let d = media.duration {
-                Text("·").foregroundColor(.white.opacity(0.6))
+                if media.year != nil {
+                    Text("·").foregroundColor(.white.opacity(0.6))
+                }
                 Text(formatDuration(d))
                     .foregroundColor(.white)
             }
 
-            // Resolution (movies only)
-            if media.type == "movie", let resolution = mediaResolution {
-                Text("·").foregroundColor(.white.opacity(0.6))
+            // Resolution
+            if let resolution = mediaResolution {
+                if media.year != nil || media.duration != nil {
+                    Text("·").foregroundColor(.white.opacity(0.6))
+                }
                 Text(resolution)
                     .foregroundColor(.white)
                     .fontWeight(.semibold)
@@ -475,9 +576,10 @@ struct MediaDetailContent: View {
         }
     }
 
-    // ACTION BUTTONS (UNCHANGED)
+    // ACTION BUTTONS
     private var actionButtons: some View {
         HStack(spacing: 14) {
+            // Play button
             Button(action: onPlay) {
                 HStack(spacing: 8) {
                     Image(systemName: "play.fill")
@@ -489,6 +591,7 @@ struct MediaDetailContent: View {
             }
             .buttonStyle(ClearGlassButtonStyle())
 
+            // Shuffle button (TV shows only)
             if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
                     Image(systemName: "shuffle.circle.fill")
@@ -497,8 +600,9 @@ struct MediaDetailContent: View {
                 .buttonStyle(ClearGlassButtonStyle())
             }
 
-            if media.type == "movie" && !trailers.isEmpty {
-                Button(action: {}) {
+            // Trailer button (movies only, when trailers available)
+            if media.type == "movie", let firstTrailer = trailers.first {
+                Button(action: { onPlayTrailer(firstTrailer) }) {
                     HStack(spacing: 6) {
                         Image(systemName: "film.stack.fill")
                         Text("Trailer")
@@ -508,7 +612,7 @@ struct MediaDetailContent: View {
                 .buttonStyle(ClearGlassButtonStyle())
             }
 
-            // Watch/Unwatch button for movies
+            // Watch/Unwatch button (movies only)
             if media.type == "movie" {
                 WatchStatusButton(media: media)
                     .environmentObject(authService)
@@ -556,8 +660,7 @@ struct MediaDetailContent: View {
 
     private func artworkURL(for path: String?) -> URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let path = path else { return nil }
         var urlString = baseURL.absoluteString + path
         if let token = server.accessToken { urlString += "?X-Plex-Token=\(token)" }
@@ -742,8 +845,7 @@ struct EpisodeThumbnail: View {
 
     private var thumbnailURL: URL? {
         guard let server = authService.selectedServer,
-              let connection = server.connections.first,
-              let baseURL = connection.url,
+              let baseURL = server.bestBaseURL,
               let thumb = episode.thumb else { return nil }
         var urlString = baseURL.absoluteString + thumb
         if let token = server.accessToken { urlString += "?X-Plex-Token=\(token)" }
@@ -840,7 +942,7 @@ struct WatchStatusButton: View {
         parentKey: nil, parentTitle: nil, parentThumb: nil, parentIndex: nil,
         index: nil, childCount: nil, leafCount: nil, viewedLeafCount: nil,
         media: nil, role: nil, genre: nil, director: nil, writer: nil,
-        country: nil, Image: nil
+        country: nil, Image: nil, Guid: nil
     ))
     .environmentObject(PlexAuthService())
 }
