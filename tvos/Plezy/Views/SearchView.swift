@@ -136,6 +136,7 @@ struct SearchView: View {
                         .padding(.bottom, 80)
                     }
                 }
+                }
             }
             .navigationDestination(for: PlexMetadata.self) { media in
                 MediaDetailView(media: media)
