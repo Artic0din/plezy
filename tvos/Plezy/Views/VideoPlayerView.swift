@@ -853,28 +853,40 @@ class VideoPlayerManager: ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             if let image = UIImage(data: data) {
-                // Create artwork using non-isolated helper to avoid actor isolation issues
-                // MPMediaItemArtwork's requestHandler is called on Apple's MediaPlayer queue,
-                // not the main actor, so we must not capture @MainActor state in the closure
-                let artwork = Self.makeArtwork(from: image)
-                var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-                info[MPMediaItemPropertyArtwork] = artwork
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                print("🎬 [Player] Loaded artwork")
+                // Create artwork on main actor, but the artwork's requestHandler closure
+                // will be called by MediaPlayer on its own queue. We must ensure the closure
+                // is completely nonisolated and only captures the UIImage value.
+                await updateNowPlayingArtwork(with: image)
             }
         } catch {
             print("⚠️ [Player] Failed to load artwork: \(error)")
         }
     }
 
+    /// Update Now Playing with artwork - this must be on MainActor
+    /// but the MPMediaItemArtwork creation is delegated to a nonisolated helper
+    @MainActor
+    private func updateNowPlayingArtwork(with image: UIImage) {
+        let artwork = Self.makeArtwork(from: image)
+        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        info[MPMediaItemPropertyArtwork] = artwork
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        print("🎬 [Player] Loaded artwork")
+    }
+
     /// Creates MPMediaItemArtwork with a non-isolated closure.
     /// This MUST be nonisolated because MPMediaItemArtwork's requestHandler
     /// is called on Apple's MediaPlayer queue, not the main actor.
     /// If the closure were @MainActor-isolated, it would crash with dispatch_assert_queue_fail.
+    ///
+    /// CRITICAL: This is a static function that captures ONLY the image parameter.
+    /// The closure `{ _ in image }` must not reference `self` or any actor-isolated state.
     nonisolated private static func makeArtwork(from image: UIImage) -> MPMediaItemArtwork {
-        let size = image.size
-        // Capture image directly - the closure must not reference any actor-isolated state
-        return MPMediaItemArtwork(boundsSize: size) { _ in image }
+        // Capture image size and the image itself before creating the closure
+        let imageSize = image.size
+        // The closure is intentionally simple - it just returns the pre-loaded image.
+        // This avoids any actor hops when MediaPlayer calls it on its internal queue.
+        return MPMediaItemArtwork(boundsSize: imageSize) { _ in image }
     }
 
     private func setupProgressTracking(client: PlexAPIClient, player: AVPlayer, ratingKey: String) {

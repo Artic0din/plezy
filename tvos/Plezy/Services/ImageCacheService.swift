@@ -11,8 +11,116 @@ import Combine
 import ImageIO
 import CryptoKit
 
+// MARK: - String MD5 Extension (Top-level, nonisolated)
+
+/// MD5 hash extension - MUST be at top level (not nested in any actor/class)
+/// to avoid actor isolation issues when called from background queues.
+extension String {
+    /// Compute a stable MD5 hash that persists across app launches
+    /// Note: String.hashValue is NOT stable across launches due to hash randomization
+    ///
+    /// This is intentionally a simple, synchronous, nonisolated computation.
+    /// It can safely be called from any queue without causing executor conflicts.
+    var md5Hash: String {
+        let data = Data(self.utf8)
+        let hash = Insecure.MD5.hash(data: data)
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// MARK: - Disk Cache Helpers (Nonisolated free functions)
+
+/// These helper functions perform disk I/O and are intentionally nonisolated.
+/// They can be called from any context without actor isolation issues.
+/// The ImageCacheService orchestrates these calls using proper async/await.
+
+/// Compute the disk cache file URL for a given image URL
+/// This is a pure function with no side effects or actor isolation.
+private func computeDiskCacheURL(for url: URL, in directory: URL) -> URL {
+    let filename = url.absoluteString.md5Hash
+    return directory.appendingPathComponent(filename)
+}
+
+/// Load image data from disk synchronously
+/// Called from a detached task to avoid blocking the main thread.
+/// Returns the loaded UIImage or nil if not found/invalid.
+private func loadImageFromDisk(url: URL, cacheDirectory: URL, maxDimension: CGFloat) -> UIImage? {
+    let fileURL = computeDiskCacheURL(for: url, in: cacheDirectory)
+
+    guard let data = try? Data(contentsOf: fileURL) else {
+        return nil
+    }
+
+    // Use downsampling when loading from disk for memory efficiency
+    guard let image = downsampleImageData(data, to: maxDimension) else {
+        // Fallback to regular loading
+        return UIImage(data: data)
+    }
+
+    return image
+}
+
+/// Save image data to disk synchronously
+/// Called from a detached task to avoid blocking.
+private func saveImageToDisk(data: Data, for url: URL, in directory: URL) {
+    let fileURL = computeDiskCacheURL(for: url, in: directory)
+    try? data.write(to: fileURL)
+}
+
+/// Downsample image data using ImageIO for memory efficiency
+/// This is a pure function - no actor isolation concerns.
+private func downsampleImageData(_ data: Data, to maxDimension: CGFloat) -> UIImage? {
+    let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+
+    guard let imageSource = CGImageSourceCreateWithData(data as CFData, imageSourceOptions) else {
+        return nil
+    }
+
+    // Get original image dimensions
+    guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+          let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
+        return nil
+    }
+
+    // Calculate scale factor to fit within maxDimension
+    let scale = min(maxDimension / max(width, height), 1.0)
+
+    // If image is already small enough, decode at full size
+    if scale >= 1.0 {
+        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, options) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
+
+    // Downsample to target size
+    let maxPixels = max(width, height) * scale
+    let downsampleOptions = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixels
+    ] as CFDictionary
+
+    guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
+        return nil
+    }
+
+    return UIImage(cgImage: downsampledImage)
+}
+
+// MARK: - ImageCacheService
+
 /// Manages in-memory and disk-based image caching
 /// Optimized for tvOS with aggressive memory management and image downsampling
+///
+/// Architecture notes:
+/// - The service itself is NOT an actor to allow flexible access patterns
+/// - Memory cache uses NSCache which is thread-safe
+/// - Disk operations are performed via detached tasks using nonisolated helper functions
+/// - This avoids mixing GCD queues with actor isolation, preventing executor crashes
 class ImageCacheService {
     static let shared = ImageCacheService()
 
@@ -81,13 +189,14 @@ class ImageCacheService {
 
     /// Fetch image from cache or download it
     func image(for url: URL) async -> UIImage? {
-        // Check memory cache first
+        // Check memory cache first (NSCache is thread-safe)
         let cacheKey = url.absoluteString as NSString
         if let cachedImage = memoryCache.object(forKey: cacheKey) {
             return cachedImage
         }
 
-        // Check disk cache on background queue to avoid blocking main thread
+        // Check disk cache using a detached task to avoid blocking
+        // and to ensure we don't have actor isolation issues
         if let diskImage = await loadFromDiskAsync(url: url) {
             // Store in memory for faster access next time with proper cost
             let memoryCost = Int(diskImage.size.width * diskImage.size.height * 4)
@@ -95,13 +204,10 @@ class ImageCacheService {
             return diskImage
         }
 
-        // Check if already downloading (async-safe)
-        let existingTask = await withCheckedContinuation { continuation in
-            downloadLock.lock()
-            let task = activeDownloads[url]
-            downloadLock.unlock()
-            continuation.resume(returning: task)
-        }
+        // Check if already downloading (thread-safe access)
+        downloadLock.lock()
+        let existingTask = activeDownloads[url]
+        downloadLock.unlock()
 
         if let existingTask = existingTask {
             return await existingTask.value
@@ -112,23 +218,17 @@ class ImageCacheService {
             await self.downloadImage(from: url)
         }
 
-        await withCheckedContinuation { continuation in
-            downloadLock.lock()
-            activeDownloads[url] = downloadTask
-            downloadLock.unlock()
-            continuation.resume()
-        }
+        downloadLock.lock()
+        activeDownloads[url] = downloadTask
+        downloadLock.unlock()
 
         // Wait for download
         let image = await downloadTask.value
 
-        // Clean up task (async-safe)
-        await withCheckedContinuation { continuation in
-            downloadLock.lock()
-            activeDownloads.removeValue(forKey: url)
-            downloadLock.unlock()
-            continuation.resume()
-        }
+        // Clean up task
+        downloadLock.lock()
+        activeDownloads.removeValue(forKey: url)
+        downloadLock.unlock()
 
         return image
     }
@@ -143,9 +243,8 @@ class ImageCacheService {
                 return nil
             }
 
-            // Use ImageIO for memory-efficient downsampling
-            // This decodes the image at a reduced size, never loading full resolution into memory
-            guard let downsampledImage = downsample(data: data, to: maxImageDimension) else {
+            // Use the nonisolated helper function for downsampling
+            guard let downsampledImage = downsampleImageData(data, to: maxImageDimension) else {
                 // Fallback to regular loading if downsampling fails
                 guard let image = UIImage(data: data) else { return nil }
                 return image
@@ -158,8 +257,9 @@ class ImageCacheService {
             let cacheKey = url.absoluteString as NSString
             memoryCache.setObject(downsampledImage, forKey: cacheKey, cost: memoryCost)
 
-            // Save downsampled image to disk asynchronously
-            // Use PNG for images with transparency (logos), JPEG for opaque images (photos)
+            // Save downsampled image to disk using a detached task
+            // This ensures disk I/O doesn't block and doesn't cause actor isolation issues
+            let cacheDir = self.diskCacheDirectory
             Task.detached(priority: .background) {
                 let hasAlpha = downsampledImage.cgImage?.alphaInfo != .none &&
                                downsampledImage.cgImage?.alphaInfo != .noneSkipFirst &&
@@ -175,7 +275,8 @@ class ImageCacheService {
                 }
 
                 if let data = imageData {
-                    await self.saveToDisk(image: downsampledImage, url: url, data: data)
+                    // Use nonisolated helper function - no actor hop needed
+                    saveImageToDisk(data: data, for: url, in: cacheDir)
                 }
             }
 
@@ -185,138 +286,68 @@ class ImageCacheService {
         }
     }
 
-    /// Downsample image using ImageIO for memory efficiency
-    /// This is critical - it decodes the image at reduced size, avoiding full-res memory spike
-    private func downsample(data: Data, to maxDimension: CGFloat) -> UIImage? {
-        let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-
-        guard let imageSource = CGImageSourceCreateWithData(data as CFData, imageSourceOptions) else {
-            return nil
-        }
-
-        // Get original image dimensions
-        guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
-              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
-            return nil
-        }
-
-        // Calculate scale factor to fit within maxDimension
-        let scale = min(maxDimension / max(width, height), 1.0)
-
-        // If image is already small enough, decode at full size
-        if scale >= 1.0 {
-            let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-            guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, options) else {
-                return nil
-            }
-            return UIImage(cgImage: cgImage)
-        }
-
-        // Downsample to target size
-        let maxPixels = max(width, height) * scale
-        let downsampleOptions = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixels
-        ] as CFDictionary
-
-        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
-            return nil
-        }
-
-        return UIImage(cgImage: downsampledImage)
-    }
-
-    /// Load image from disk cache (async version - offloads to background queue)
+    /// Load image from disk cache asynchronously
+    /// Uses Task.detached to perform disk I/O without actor isolation conflicts
     private func loadFromDiskAsync(url: URL) async -> UIImage? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let image = self.loadFromDisk(url: url)
-                continuation.resume(returning: image)
-            }
-        }
-    }
+        // Capture values needed for the detached task
+        let cacheDir = self.diskCacheDirectory
+        let maxDim = self.maxImageDimension
 
-    /// Load image from disk cache (synchronous - call from background only)
-    private func loadFromDisk(url: URL) -> UIImage? {
-        let fileURL = diskCacheURL(for: url)
-
-        guard let data = try? Data(contentsOf: fileURL) else {
-            return nil
-        }
-
-        // Use downsampling when loading from disk too
-        guard let image = downsample(data: data, to: maxImageDimension) else {
-            // Fallback to regular loading
-            return UIImage(data: data)
-        }
-
-        return image
-    }
-
-    /// Save image to disk cache
-    private func saveToDisk(image: UIImage, url: URL, data: Data) async {
-        let fileURL = diskCacheURL(for: url)
-
-        do {
-            try data.write(to: fileURL)
-            // Clean up old cache if needed
-            await cleanDiskCacheIfNeeded()
-        } catch {
-            // Silently fail - disk cache is optional
-        }
-    }
-
-    /// Get disk cache file URL for a given image URL
-    private func diskCacheURL(for url: URL) -> URL {
-        // Use MD5 hash of URL as filename to avoid filesystem issues
-        let filename = url.absoluteString.md5Hash
-        return diskCacheDirectory.appendingPathComponent(filename)
+        // Use Task.detached to ensure this runs without any actor context
+        // This prevents the _dispatch_assert_queue_fail crash
+        return await Task.detached(priority: .userInitiated) {
+            // Call nonisolated helper function - completely free of actor isolation
+            return loadImageFromDisk(url: url, cacheDirectory: cacheDir, maxDimension: maxDim)
+        }.value
     }
 
     /// Clean disk cache if it exceeds size limit
     private func cleanDiskCacheIfNeeded() async {
-        do {
-            let files = try FileManager.default.contentsOfDirectory(
-                at: diskCacheDirectory,
-                includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
-            )
+        let cacheDir = self.diskCacheDirectory
+        let sizeLimit = self.diskCacheSizeLimit
 
-            // Calculate total size
-            var totalSize: Int64 = 0
-            var fileInfos: [(url: URL, size: Int64, date: Date)] = []
+        // Run cleanup in detached task to avoid blocking
+        await Task.detached(priority: .background) {
+            do {
+                let files = try FileManager.default.contentsOfDirectory(
+                    at: cacheDir,
+                    includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
+                )
 
-            for fileURL in files {
-                let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-                let size = attributes[.size] as? Int64 ?? 0
-                let date = attributes[.modificationDate] as? Date ?? Date.distantPast
+                // Calculate total size
+                var totalSize: Int64 = 0
+                var fileInfos: [(url: URL, size: Int64, date: Date)] = []
 
-                totalSize += size
-                fileInfos.append((url: fileURL, size: size, date: date))
-            }
+                for fileURL in files {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+                    let size = attributes[.size] as? Int64 ?? 0
+                    let date = attributes[.modificationDate] as? Date ?? Date.distantPast
 
-            // If under limit, no cleanup needed
-            if totalSize <= diskCacheSizeLimit {
-                return
-            }
-
-            // Sort by date (oldest first)
-            fileInfos.sort { $0.date < $1.date }
-
-            // Remove oldest files until under limit
-            for fileInfo in fileInfos {
-                if totalSize <= diskCacheSizeLimit {
-                    break
+                    totalSize += size
+                    fileInfos.append((url: fileURL, size: size, date: date))
                 }
 
-                try? FileManager.default.removeItem(at: fileInfo.url)
-                totalSize -= fileInfo.size
+                // If under limit, no cleanup needed
+                if totalSize <= sizeLimit {
+                    return
+                }
+
+                // Sort by date (oldest first)
+                fileInfos.sort { $0.date < $1.date }
+
+                // Remove oldest files until under limit
+                for fileInfo in fileInfos {
+                    if totalSize <= sizeLimit {
+                        break
+                    }
+
+                    try? FileManager.default.removeItem(at: fileInfo.url)
+                    totalSize -= fileInfo.size
+                }
+            } catch {
+                // Silently fail - cleanup is best effort
             }
-        } catch {
-            // Silently fail - cleanup is best effort
-        }
+        }.value
     }
 
     /// Clear all cached images
@@ -333,18 +364,6 @@ class ImageCacheService {
                 _ = await image(for: url)
             }
         }
-    }
-}
-
-// MARK: - String MD5 Extension
-
-extension String {
-    /// Compute a stable MD5 hash that persists across app launches
-    /// Note: String.hashValue is NOT stable across launches due to hash randomization
-    var md5Hash: String {
-        let data = Data(self.utf8)
-        let hash = Insecure.MD5.hash(data: data)
-        return hash.map { String(format: "%02x", $0) }.joined()
     }
 }
 
