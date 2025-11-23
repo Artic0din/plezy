@@ -137,16 +137,16 @@ struct MediaCardRow<Content: View>: View {
     }
 }
 
-// MARK: - Continue Watching Row
+// MARK: - Up Next Row
 
-/// Specialized row for Continue Watching with play action
+/// Specialized row for Up Next (Continue Watching) with play action
 struct ContinueWatchingRow: View {
     let items: [PlexMetadata]
     let onPlay: (PlexMetadata) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Continue Watching")
+            Text("Up Next")
                 .font(.system(size: 32, weight: .bold, design: .default))
                 .foregroundColor(.white)
                 .padding(.horizontal, CardRowLayout.horizontalPadding)
