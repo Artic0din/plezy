@@ -84,7 +84,7 @@ class PlexAPIClient {
         configuration.httpMaximumConnectionsPerHost = 6 // Allow more concurrent connections
 
         // Configure aggressive caching
-        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let cacheURL = cachesDirectory.appendingPathComponent("PlexAPICache")
         let cache = URLCache(
             memoryCapacity: 50 * 1024 * 1024, // 50 MB memory cache
@@ -849,7 +849,7 @@ extension PlexAPIClient {
         }
 
         // Debug logging for PIN status
-        let hasToken = authToken != nil && !authToken!.isEmpty
+        let hasToken = authToken.map { !$0.isEmpty } ?? false
         print("🔑 [PIN] Status - trusted: \(trusted), hasToken: \(hasToken), authToken: \(authToken?.prefix(20) ?? "nil")...")
 
         return PlexPin(id: pinId, code: code, authToken: authToken)
