@@ -294,6 +294,158 @@ extension View {
             y: DesignTokens.spacingXSmall
         )
     }
+
+    /// Applies Liquid Glass styling to section headers
+    func liquidGlassSectionHeader() -> some View {
+        self.modifier(LiquidGlassSectionHeaderModifier())
+    }
+
+    /// Applies Liquid Glass styling to overlay panels
+    func liquidGlassOverlay(cornerRadius: CGFloat = DesignTokens.cornerRadiusHero) -> some View {
+        self.modifier(LiquidGlassOverlayModifier(cornerRadius: cornerRadius))
+    }
+
+    /// Applies Liquid Glass focus ring for focusable elements
+    func liquidGlassFocusRing(isFocused: Bool, cornerRadius: CGFloat = DesignTokens.cornerRadiusLarge) -> some View {
+        self.modifier(LiquidGlassFocusRingModifier(isFocused: isFocused, cornerRadius: cornerRadius))
+    }
+}
+
+/// Liquid Glass section header modifier
+struct LiquidGlassSectionHeaderModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(
+                ZStack {
+                    // Glass material
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.6)
+
+                    // Beacon gradient accent
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.beaconPurple.opacity(0.15),
+                                    Color.beaconBlue.opacity(0.08)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .blendMode(.plusLighter)
+
+                    // Edge highlight
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.25),
+                                    Color.white.opacity(0.1)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
+    }
+}
+
+/// Liquid Glass overlay panel modifier
+struct LiquidGlassOverlayModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    if reduceTransparency {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color.beaconSurface.opacity(0.95))
+                    } else {
+                        // Dark base layer
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(Color.black.opacity(0.4))
+
+                        // Glass material
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.85)
+
+                        // Beacon vibrancy
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.beaconBlue.opacity(0.08),
+                                        Color.beaconPurple.opacity(0.06),
+                                        Color.beaconMagenta.opacity(0.04)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .blendMode(.plusLighter)
+
+                        // Edge highlight
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.2),
+                                        Color.white.opacity(0.05)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    }
+                }
+            )
+            .shadow(color: .black.opacity(0.4), radius: 25, x: 0, y: 12)
+    }
+}
+
+/// Liquid Glass focus ring modifier
+struct LiquidGlassFocusRingModifier: ViewModifier {
+    let isFocused: Bool
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: isFocused ? [
+                                Color.white.opacity(0.5),
+                                Color.beaconPurple.opacity(0.4),
+                                Color.white.opacity(0.3)
+                            ] : [Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: isFocused ? 3 : 0
+                    )
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
+            )
+            .shadow(
+                color: isFocused ? Color.beaconPurple.opacity(0.4) : .clear,
+                radius: isFocused ? 15 : 0,
+                x: 0,
+                y: 0
+            )
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
+    }
 }
 
 // MARK: - Responsive Scaling

@@ -98,12 +98,15 @@ struct MediaCardRow<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Section title
-            Text(title)
-                .font(.system(size: 40, weight: .bold, design: .default))
-                .foregroundColor(.white)
-                .padding(.horizontal, CardRowLayout.horizontalPadding)
-                .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+            // Section title with Liquid Glass styling
+            HStack {
+                Text(title)
+                    .font(.system(size: 36, weight: .bold, design: .default))
+                    .foregroundColor(.white)
+                    .liquidGlassSectionHeader()
+                Spacer()
+            }
+            .padding(.horizontal, CardRowLayout.horizontalPadding)
 
             // Horizontal scrolling row with explicit card sizing
             ScrollView(.horizontal, showsIndicators: false) {
@@ -150,11 +153,15 @@ struct ContinueWatchingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Up Next")
-                .font(.system(size: 32, weight: .bold, design: .default))
-                .foregroundColor(.white)
-                .padding(.horizontal, CardRowLayout.horizontalPadding)
-                .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+            // Section title with Liquid Glass styling
+            HStack {
+                Text("Up Next")
+                    .font(.system(size: 32, weight: .bold, design: .default))
+                    .foregroundColor(.white)
+                    .liquidGlassSectionHeader()
+                Spacer()
+            }
+            .padding(.horizontal, CardRowLayout.horizontalPadding)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: CardRowLayout.cardSpacing) {
@@ -231,11 +238,15 @@ struct HubRow: View {
     var body: some View {
         if let items = hub.metadata, !items.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
-                Text(hub.title)
-                    .font(.system(size: 40, weight: .bold, design: .default))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, CardRowLayout.horizontalPadding)
-                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+                // Section title with Liquid Glass styling
+                HStack {
+                    Text(hub.title)
+                        .font(.system(size: 36, weight: .bold, design: .default))
+                        .foregroundColor(.white)
+                        .liquidGlassSectionHeader()
+                    Spacer()
+                }
+                .padding(.horizontal, CardRowLayout.horizontalPadding)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: CardRowLayout.cardSpacing) {
@@ -280,11 +291,15 @@ struct GeometryMediaCardRow: View {
             let calculatedHeight = CardRowLayout.cardHeight(for: calculatedWidth)
 
             VStack(alignment: .leading, spacing: 20) {
-                Text(title)
-                    .font(.system(size: 40, weight: .bold, design: .default))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, CardRowLayout.horizontalPadding)
-                    .shadow(color: .black.opacity(0.8), radius: 8, x: 0, y: 2)
+                // Section title with Liquid Glass styling
+                HStack {
+                    Text(title)
+                        .font(.system(size: 36, weight: .bold, design: .default))
+                        .foregroundColor(.white)
+                        .liquidGlassSectionHeader()
+                    Spacer()
+                }
+                .padding(.horizontal, CardRowLayout.horizontalPadding)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: CardRowLayout.cardSpacing) {

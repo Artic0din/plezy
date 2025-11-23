@@ -633,7 +633,7 @@ struct FullScreenHeroOverlay: View {
             }
             .frame(height: 180, alignment: .leading) // Fixed height for logo
 
-            // Metadata line
+            // Metadata line with Liquid Glass styling
             HStack(spacing: 10) {
                 Text(item.type == "movie" ? "Movie" : "TV Show")
                     .font(.system(size: 24, weight: .medium, design: .default))
@@ -649,6 +649,24 @@ struct FullScreenHeroOverlay: View {
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.5)
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.2), Color.white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
+            )
 
             // Synopsis - grows upward when long, bottom stays anchored near Continue Watching
             if let summary = item.summary {
