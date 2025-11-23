@@ -302,17 +302,16 @@ struct MediaDetailContent: View {
             // HERO BLOCK: Content varies by media type
             VStack(alignment: .leading, spacing: 12) {
                 if media.type == "show" {
-                    // TV Show: Network Logo → Logo/title → Media details → Other details → Synopsis → Buttons
-                    networkLogoRow
+                    // TV Show: Logo/title → Media details → Other details → Synopsis → Buttons
                     logoOrTitle
-                    mediaTypeRow         // TV Show | Rating | Genre
+                    mediaTypeRow         // TV Show | Content Rating | Genre | Network Logo
                     technicalDetailsRow  // Year | Runtime | Resolution
                     synopsisArea
                     actionButtons
                 } else {
                     // Movie: Logo/title → Media details → Other details → Synopsis → Buttons
                     logoOrTitle
-                    mediaTypeRow         // Movie | Rating | Genre
+                    mediaTypeRow         // Movie | Content Rating | Genre
                     technicalDetailsRow  // Year | Runtime | Resolution | Audio
                     synopsisArea
                     actionButtons
@@ -366,31 +365,6 @@ struct MediaDetailContent: View {
 
     // MARK: - Hero Components
 
-    // Network logo row (TV shows only - displayed at top)
-    private var networkLogoRow: some View {
-        Group {
-            if let logoURL = networkLogoURL {
-                AsyncImage(url: logoURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 36)
-                            .frame(maxWidth: 120)
-                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
-                    case .failure, .empty:
-                        EmptyView()
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-            } else {
-                EmptyView()
-            }
-        }
-    }
-
     private var logoOrTitle: some View {
         Group {
             if let logo = media.clearLogo, let url = logoURL(for: logo) {
@@ -417,18 +391,22 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.8), radius: 10, x: 0, y: 4)
     }
 
-    // Media Type Row: Type | Rating | Genre
+    // Media Type Row: Type | Content Rating | Genre (+ Network Logo for TV shows)
     private var mediaTypeRow: some View {
         HStack(spacing: 10) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
                 .foregroundColor(.white)
                 .fontWeight(.medium)
 
-            // Audience Rating (stars)
-            if let r = media.audienceRating {
+            // Content Rating (cleaned - removes /au suffix)
+            if let c = media.contentRating {
                 Text("·").foregroundColor(.white.opacity(0.7))
-                Text("★ \(String(format: "%.1f", r))")
-                    .foregroundColor(.yellow)
+                Text(cleanedContentRating(c))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(4)
             }
 
             // Genre
@@ -436,6 +414,25 @@ struct MediaDetailContent: View {
                 Text("·").foregroundColor(.white.opacity(0.7))
                 Text(firstGenre.tag)
                     .foregroundColor(.white)
+            }
+
+            // Network logo for TV shows (at end of row)
+            if media.type == "show", let logoURL = networkLogoURL {
+                Text("·").foregroundColor(.white.opacity(0.7))
+                AsyncImage(url: logoURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 28)
+                            .frame(maxWidth: 80)
+                    case .failure, .empty:
+                        EmptyView()
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
             }
         }
         .font(.system(size: 24, weight: .medium))
@@ -464,7 +461,7 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.6), radius: 6, x: 0, y: 2)
     }
 
-    // Technical Details Row: Year | Content Rating | Runtime | Resolution | Audio
+    // Technical Details Row: Year | Runtime | Resolution | Audio (movies only)
     private var technicalDetailsRow: some View {
         HStack(spacing: 10) {
             // Year
@@ -473,29 +470,18 @@ struct MediaDetailContent: View {
                     .foregroundColor(.white)
             }
 
-            // Content Rating (cleaned - removes /au suffix)
-            if let c = media.contentRating {
-                if media.year != nil { Text("·").foregroundColor(.white.opacity(0.6)) }
-                Text(cleanedContentRating(c))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.2))
-                    .cornerRadius(4)
-            }
-
             // Runtime
             if let d = media.duration {
-                if media.year != nil || media.contentRating != nil {
+                if media.year != nil {
                     Text("·").foregroundColor(.white.opacity(0.6))
                 }
                 Text(formatDuration(d))
                     .foregroundColor(.white)
             }
 
-            // Resolution (both movies and TV shows)
+            // Resolution
             if let resolution = mediaResolution {
-                if media.year != nil || media.contentRating != nil || media.duration != nil {
+                if media.year != nil || media.duration != nil {
                     Text("·").foregroundColor(.white.opacity(0.6))
                 }
                 Text(resolution)
