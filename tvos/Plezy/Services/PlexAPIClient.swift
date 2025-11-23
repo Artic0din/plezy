@@ -216,6 +216,106 @@ class PlexAPIClient {
         throw lastError ?? PlexAPIError.serverNotReachable
     }
 
+    /// Request method for endpoints that return empty or no content responses
+    /// Used for scrobble, unscrobble, and other action endpoints that just need HTTP success status
+    func requestNoContent(
+        path: String,
+        method: String = "GET",
+        queryItems: [URLQueryItem]? = nil,
+        body: Data? = nil,
+        retries: Int = 3
+    ) async throws {
+        // Validate authentication for server endpoints (not plex.tv public endpoints)
+        let requiresAuth = !path.hasPrefix("/api/v2/pins") && baseURL.host != "plex.tv"
+        if requiresAuth && accessToken == nil {
+            print("❌ [API] Unauthorized request to \(path) - no access token")
+            throw PlexAPIError.unauthorized
+        }
+
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        urlComponents?.queryItems = queryItems
+
+        guard let url = urlComponents?.url else {
+            throw PlexAPIError.invalidURL
+        }
+
+        var lastError: Error?
+
+        for attempt in 0..<retries {
+            if attempt > 0 {
+                let delay = min(pow(2.0, Double(attempt)), 16.0) // Cap at 16 seconds
+                #if DEBUG
+                print("🔄 [API] Retry attempt \(attempt + 1)/\(retries) after \(delay)s delay")
+                #endif
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+
+            #if DEBUG
+            print("🌐 [API] \(method) \(url) (attempt \(attempt + 1)/\(retries))")
+            #endif
+
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            request.httpBody = body
+
+            for (key, value) in headers {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+
+            do {
+                let (data, response) = try await session.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw PlexAPIError.invalidResponse
+                }
+
+                #if DEBUG
+                print("🌐 [API] Response: \(httpResponse.statusCode) - \(data.count) bytes")
+                #endif
+
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    // Provide specific error messages for common HTTP status codes
+                    switch httpResponse.statusCode {
+                    case 401:
+                        throw PlexAPIError.unauthorized
+                    case 404:
+                        throw PlexAPIError.notFound
+                    case 429:
+                        throw PlexAPIError.rateLimited
+                    case 500...599:
+                        throw PlexAPIError.serverError(statusCode: httpResponse.statusCode)
+                    default:
+                        throw PlexAPIError.httpError(statusCode: httpResponse.statusCode)
+                    }
+                }
+
+                // Success - no need to decode response body
+                #if DEBUG
+                print("✅ [API] Request successful (no content expected)")
+                #endif
+                return
+            } catch {
+                lastError = error
+                #if DEBUG
+                print("⚠️ [API] Attempt \(attempt + 1)/\(retries) failed: \(error.localizedDescription)")
+                #endif
+
+                // Don't retry on certain errors - they won't succeed on retry
+                if let apiError = error as? PlexAPIError {
+                    switch apiError {
+                    case .unauthorized, .notFound:
+                        throw apiError
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+
+        // All retries exhausted, throw the last error
+        throw lastError ?? PlexAPIError.serverNotReachable
+    }
+
     // MARK: - Library Methods
 
     func getLibraries() async throws -> [PlexLibrary] {
@@ -496,7 +596,7 @@ class PlexAPIClient {
             URLQueryItem(name: "time", value: "\(time)"),
             URLQueryItem(name: "duration", value: "\(duration)")
         ]
-        let _: PlexMediaContainer<PlexMetadata> = try await request(
+        try await requestNoContent(
             path: "/:/timeline",
             queryItems: queryItems
         )
@@ -507,7 +607,7 @@ class PlexAPIClient {
             URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library"),
             URLQueryItem(name: "key", value: ratingKey)
         ]
-        let _: PlexMediaContainer<PlexMetadata> = try await request(
+        try await requestNoContent(
             path: "/:/scrobble",
             queryItems: queryItems
         )
@@ -518,7 +618,7 @@ class PlexAPIClient {
             URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library"),
             URLQueryItem(name: "key", value: ratingKey)
         ]
-        let _: PlexMediaContainer<PlexMetadata> = try await request(
+        try await requestNoContent(
             path: "/:/unscrobble",
             queryItems: queryItems
         )
@@ -555,7 +655,7 @@ class PlexAPIClient {
             URLQueryItem(name: "time", value: "0"),
             URLQueryItem(name: "duration", value: "0")
         ]
-        let _: PlexMediaContainer<PlexMetadata> = try await request(
+        try await requestNoContent(
             path: "/:/timeline",
             queryItems: queryItems
         )
