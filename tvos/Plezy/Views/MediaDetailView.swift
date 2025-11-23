@@ -33,6 +33,7 @@ struct MediaDetailView: View {
 
     // Playback
     @State private var playMedia: PlexMetadata?
+    @State private var playTrailer: PlexMetadata?
 
     // Content padding (same as original cardPadding)
     private let contentPadding: CGFloat = 48
@@ -59,6 +60,7 @@ struct MediaDetailView: View {
                     trailers: trailers,
                     onPlay: handlePlay,
                     onPlayEpisode: { episode in playMedia = episode },
+                    onPlayTrailer: { trailer in playTrailer = trailer },
                     contentPadding: contentPadding
                 )
                 .environmentObject(authService)
@@ -70,6 +72,10 @@ struct MediaDetailView: View {
         .task { await loadDetails() }
         .fullScreenCover(item: $playMedia) { media in
             VideoPlayerView(media: media)
+                .environmentObject(authService)
+        }
+        .fullScreenCover(item: $playTrailer) { trailer in
+            VideoPlayerView(media: trailer)
                 .environmentObject(authService)
         }
         .onChange(of: playMedia) { oldValue, newValue in
@@ -98,6 +104,7 @@ struct MediaDetailView: View {
         trailers = []
         focusedEpisode = nil
         playMedia = nil
+        playTrailer = nil
         #if DEBUG
         print("📺 [MediaDetailView] State cleared on dismiss")
         #endif
@@ -281,6 +288,7 @@ struct MediaDetailContent: View {
     let trailers: [PlexMetadata]
     let onPlay: () -> Void
     let onPlayEpisode: (PlexMetadata) -> Void
+    let onPlayTrailer: (PlexMetadata) -> Void
     let contentPadding: CGFloat
 
     @EnvironmentObject var authService: PlexAuthService
@@ -289,20 +297,30 @@ struct MediaDetailContent: View {
     @State private var networkLogoURL: URL?
 
     var body: some View {
-        // ORIGINAL INNER LAYOUT - unchanged from ShowDetailCard
+        // Stack order differs between Movie and TV Show
         VStack(alignment: .leading, spacing: 0) {
-            // HERO BLOCK: Logo + Metadata + Synopsis + Technical Details + Buttons
-            // Positioned just above the season selector
+            // HERO BLOCK: Content varies by media type
             VStack(alignment: .leading, spacing: 12) {
-                logoOrTitle
-                metadataRow          // Type | Genre (with network logo for TV shows)
-                synopsisArea         // Description
-                technicalDetailsRow  // Rating, Year, Runtime, Resolution, Audio
-                actionButtons
+                if media.type == "show" {
+                    // TV Show: Network Logo → Logo/title → Media details → Other details → Synopsis → Buttons
+                    networkLogoRow
+                    logoOrTitle
+                    mediaTypeRow         // TV Show | Rating | Genre
+                    technicalDetailsRow  // Year | Runtime | Resolution
+                    synopsisArea
+                    actionButtons
+                } else {
+                    // Movie: Logo/title → Media details → Other details → Synopsis → Buttons
+                    logoOrTitle
+                    mediaTypeRow         // Movie | Rating | Genre
+                    technicalDetailsRow  // Year | Runtime | Resolution | Audio
+                    synopsisArea
+                    actionButtons
+                }
             }
             .padding(.horizontal, contentPadding)
 
-            // SEASON CHIPS + EPISODES ROW
+            // SEASON CHIPS + EPISODES ROW (TV Shows only)
             if media.type == "show" && !seasons.isEmpty {
                 seasonChipsRow
                     .padding(.top, 20)
@@ -315,10 +333,6 @@ struct MediaDetailContent: View {
                 Spacer().frame(height: contentPadding)
             }
         }
-        // REMOVED: .frame(width: cardWidth, height: cardHeight)
-        // REMOVED: .background(ZStack { artwork + gradient })
-        // REMOVED: .clipShape(RoundedRectangle(...))
-        // REMOVED: .overlay(RoundedRectangle(...).strokeBorder(...))
         // Use task(id:) so it re-runs when tmdbId becomes available after detailed metadata loads
         .task(id: media.tmdbId) {
             await loadNetworkLogo()
@@ -350,7 +364,32 @@ struct MediaDetailContent: View {
         }
     }
 
-    // MARK: - Hero Components (ALL UNCHANGED)
+    // MARK: - Hero Components
+
+    // Network logo row (TV shows only - displayed at top)
+    private var networkLogoRow: some View {
+        Group {
+            if let logoURL = networkLogoURL {
+                AsyncImage(url: logoURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 36)
+                            .frame(maxWidth: 120)
+                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
+                    case .failure, .empty:
+                        EmptyView()
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            } else {
+                EmptyView()
+            }
+        }
+    }
 
     private var logoOrTitle: some View {
         Group {
@@ -378,33 +417,21 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.8), radius: 10, x: 0, y: 4)
     }
 
-    // Row 1: Network Logo (TV only) | Type | Genre
-    private var metadataRow: some View {
+    // Media Type Row: Type | Rating | Genre
+    private var mediaTypeRow: some View {
         HStack(spacing: 10) {
-            // Network logo for TV shows (from TMDB)
-            if media.type == "show", let logoURL = networkLogoURL {
-                AsyncImage(url: logoURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 28)
-                            .frame(maxWidth: 80)
-                    case .failure, .empty:
-                        EmptyView()
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-
-                Text("·").foregroundColor(.white.opacity(0.7))
-            }
-
             Text(media.type == "movie" ? "Movie" : "TV Show")
                 .foregroundColor(.white)
                 .fontWeight(.medium)
 
+            // Audience Rating (stars)
+            if let r = media.audienceRating {
+                Text("·").foregroundColor(.white.opacity(0.7))
+                Text("★ \(String(format: "%.1f", r))")
+                    .foregroundColor(.yellow)
+            }
+
+            // Genre
             if let genres = media.genre, let firstGenre = genres.first {
                 Text("·").foregroundColor(.white.opacity(0.7))
                 Text(firstGenre.tag)
@@ -437,18 +464,18 @@ struct MediaDetailContent: View {
             .shadow(color: .black.opacity(0.6), radius: 6, x: 0, y: 2)
     }
 
-    // Row 2: Technical details (Year, Runtime, Resolution, Audio)
+    // Technical Details Row: Year | Content Rating | Runtime | Resolution | Audio
     private var technicalDetailsRow: some View {
         HStack(spacing: 10) {
-            // Rating
-            if let r = media.audienceRating {
-                Text("★ \(String(format: "%.1f", r))")
-                    .foregroundColor(.yellow)
+            // Year
+            if let y = media.year {
+                Text(String(y))
+                    .foregroundColor(.white)
             }
 
             // Content Rating (cleaned - removes /au suffix)
             if let c = media.contentRating {
-                if media.audienceRating != nil { Text("·").foregroundColor(.white.opacity(0.6)) }
+                if media.year != nil { Text("·").foregroundColor(.white.opacity(0.6)) }
                 Text(cleanedContentRating(c))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
@@ -457,23 +484,20 @@ struct MediaDetailContent: View {
                     .cornerRadius(4)
             }
 
-            // Year
-            if let y = media.year {
-                Text("·").foregroundColor(.white.opacity(0.6))
-                Text(String(y))
-                    .foregroundColor(.white)
-            }
-
             // Runtime
             if let d = media.duration {
-                Text("·").foregroundColor(.white.opacity(0.6))
+                if media.year != nil || media.contentRating != nil {
+                    Text("·").foregroundColor(.white.opacity(0.6))
+                }
                 Text(formatDuration(d))
                     .foregroundColor(.white)
             }
 
-            // Resolution (movies only)
-            if media.type == "movie", let resolution = mediaResolution {
-                Text("·").foregroundColor(.white.opacity(0.6))
+            // Resolution (both movies and TV shows)
+            if let resolution = mediaResolution {
+                if media.year != nil || media.contentRating != nil || media.duration != nil {
+                    Text("·").foregroundColor(.white.opacity(0.6))
+                }
                 Text(resolution)
                     .foregroundColor(.white)
                     .fontWeight(.semibold)
@@ -563,9 +587,10 @@ struct MediaDetailContent: View {
         }
     }
 
-    // ACTION BUTTONS (UNCHANGED)
+    // ACTION BUTTONS
     private var actionButtons: some View {
         HStack(spacing: 14) {
+            // Play button
             Button(action: onPlay) {
                 HStack(spacing: 8) {
                     Image(systemName: "play.fill")
@@ -577,6 +602,7 @@ struct MediaDetailContent: View {
             }
             .buttonStyle(ClearGlassButtonStyle())
 
+            // Shuffle button (TV shows only)
             if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
                     Image(systemName: "shuffle.circle.fill")
@@ -585,8 +611,9 @@ struct MediaDetailContent: View {
                 .buttonStyle(ClearGlassButtonStyle())
             }
 
-            if media.type == "movie" && !trailers.isEmpty {
-                Button(action: {}) {
+            // Trailer button (movies only, when trailers available)
+            if media.type == "movie", let firstTrailer = trailers.first {
+                Button(action: { onPlayTrailer(firstTrailer) }) {
                     HStack(spacing: 6) {
                         Image(systemName: "film.stack.fill")
                         Text("Trailer")
@@ -596,7 +623,7 @@ struct MediaDetailContent: View {
                 .buttonStyle(ClearGlassButtonStyle())
             }
 
-            // Watch/Unwatch button for movies
+            // Watch/Unwatch button (movies only)
             if media.type == "movie" {
                 WatchStatusButton(media: media)
                     .environmentObject(authService)
