@@ -446,19 +446,22 @@ struct GridLayoutView: View {
 }
 
 #Preview {
-    LibraryContentView(library: PlexLibrary(
-        key: "1",
-        title: "Movies",
-        type: "movie",
-        agent: nil,
-        scanner: nil,
-        language: nil,
-        uuid: UUID().uuidString,
-        updatedAt: nil,
-        createdAt: nil,
-        scannedAt: nil,
-        thumb: nil,
-        art: nil
-    ))
+    LibraryContentView(
+        library: PlexLibrary(
+            key: "1",
+            title: "Movies",
+            type: "movie",
+            agent: nil,
+            scanner: nil,
+            language: nil,
+            uuid: UUID().uuidString,
+            updatedAt: nil,
+            createdAt: nil,
+            scannedAt: nil,
+            thumb: nil,
+            art: nil
+        ),
+        navigationPath: .constant(NavigationPath())
+    )
     .environmentObject(PlexAuthService())
 }

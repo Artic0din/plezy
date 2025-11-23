@@ -324,13 +324,22 @@ struct PlexLibrary: Codable, Identifiable {
     }
 }
 
-struct PlexMetadata: Codable, Identifiable, Equatable {
+struct PlexMetadata: Codable, Identifiable, Equatable, Hashable {
     static func == (lhs: PlexMetadata, rhs: PlexMetadata) -> Bool {
         // Compare by ratingKey if available, otherwise by key
         if let lhsRating = lhs.ratingKey, let rhsRating = rhs.ratingKey {
             return lhsRating == rhsRating
         }
         return lhs.key == rhs.key
+    }
+
+    func hash(into hasher: inout Hasher) {
+        // Hash by ratingKey if available, otherwise by key (matches == logic)
+        if let ratingKey = ratingKey {
+            hasher.combine(ratingKey)
+        } else {
+            hasher.combine(key)
+        }
     }
 
     let ratingKey: String?
