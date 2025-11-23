@@ -900,14 +900,28 @@ class VideoPlayerManager: ObservableObject {
     private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
         var nowPlayingInfo: [String: Any] = [:]
 
-        // Title and subtitle for tvOS display
+        // Title and subtitle for tvOS Now Playing display
         if media.type == "episode" {
+            // For TV episodes: Show name as title, episode info as artist/subtitle
             if let showTitle = media.grandparentTitle {
                 nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
                 nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
             }
+            // Episode info as artist (shows as subtitle in some contexts)
+            if let season = media.parentIndex, let episode = media.index {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = "S\(season), E\(episode) – \(media.title)"
+            } else {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = media.title
+            }
         } else {
+            // For movies: Movie title as title, studio as artist
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
+            if let studio = media.studio {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = studio
+            }
+            if let year = media.year {
+                nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = "\(year)"
+            }
         }
 
         // Duration
@@ -916,13 +930,15 @@ class VideoPlayerManager: ObservableObject {
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
         }
 
-        // External metadata for tvOS Info panel (shown when user swipes down or presses Info)
-        // This populates the system-standard AVPlayerViewController Info tab
+        // External metadata for tvOS transport bar title view and Info panel
+        // This populates the system-standard AVPlayerViewController title and Info tab
         #if os(tvOS)
         if #available(tvOS 16.0, *) {
             var externalMetadata: [AVMetadataItem] = []
 
-            // Title - for episodes, show the series name; for movies, show the movie title
+            // Title - displayed as main title in transport bar
+            // For episodes: show the series name
+            // For movies: show the movie title
             let titleItem = AVMutableMetadataItem()
             titleItem.identifier = .commonIdentifierTitle
             if media.type == "episode", let showTitle = media.grandparentTitle {
@@ -932,19 +948,51 @@ class VideoPlayerManager: ObservableObject {
             }
             externalMetadata.append(titleItem)
 
-            // Subtitle - for TV episodes: "Sx, Ex - Episode Name"
+            // Subtitle / Info line - displayed below title in transport bar
+            // For TV episodes: "Sx, Ex – Episode Name"
+            // For movies: year and content rating
+            let subtitleItem = AVMutableMetadataItem()
+            subtitleItem.identifier = .iTunesMetadataTrackSubTitle
             if media.type == "episode" {
-                let subtitleItem = AVMutableMetadataItem()
-                subtitleItem.identifier = .iTunesMetadataTrackSubTitle
                 if let season = media.parentIndex, let episode = media.index {
                     subtitleItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
                 } else {
                     subtitleItem.value = media.title as NSString
                 }
-                externalMetadata.append(subtitleItem)
+            } else {
+                // For movies, show year and rating as subtitle
+                var movieSubtitle = ""
+                if let year = media.year {
+                    movieSubtitle = "\(year)"
+                }
+                if let rating = media.contentRating {
+                    movieSubtitle += movieSubtitle.isEmpty ? rating : " • \(rating)"
+                }
+                if let duration = media.duration {
+                    let mins = duration / 1000 / 60
+                    let hrs = mins / 60
+                    let durationStr = hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
+                    movieSubtitle += movieSubtitle.isEmpty ? durationStr : " • \(durationStr)"
+                }
+                subtitleItem.value = movieSubtitle as NSString
             }
+            externalMetadata.append(subtitleItem)
 
-            // Description / Synopsis
+            // Also set as "album artist" which some tvOS versions use for subtitle display
+            let artistItem = AVMutableMetadataItem()
+            artistItem.identifier = .commonIdentifierArtist
+            if media.type == "episode" {
+                if let season = media.parentIndex, let episode = media.index {
+                    artistItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
+                } else {
+                    artistItem.value = media.title as NSString
+                }
+            } else if let studio = media.studio {
+                artistItem.value = studio as NSString
+            }
+            externalMetadata.append(artistItem)
+
+            // Description / Synopsis for Info panel
             if let summary = media.summary {
                 let descItem = AVMutableMetadataItem()
                 descItem.identifier = .commonIdentifierDescription
@@ -960,7 +1008,7 @@ class VideoPlayerManager: ObservableObject {
                 externalMetadata.append(genreItem)
             }
 
-            // Year / Creation date
+            // Year / Creation date (used for sorting, not display)
             if let year = media.year {
                 let yearItem = AVMutableMetadataItem()
                 yearItem.identifier = .commonIdentifierCreationDate
@@ -971,7 +1019,6 @@ class VideoPlayerManager: ObservableObject {
             // Content Rating (e.g., "TV-MA", "PG-13")
             if let contentRating = media.contentRating {
                 let ratingItem = AVMutableMetadataItem()
-                // Use iTunes content rating identifier
                 ratingItem.identifier = .iTunesMetadataContentRating
                 ratingItem.value = contentRating as NSString
                 externalMetadata.append(ratingItem)
@@ -985,10 +1032,23 @@ class VideoPlayerManager: ObservableObject {
                 externalMetadata.append(studioItem)
             }
 
-            // Set external metadata on player item for the system Info panel
+            // Artwork identifier for the transport bar artwork (loaded separately)
+            // This helps tvOS associate the artwork with the metadata
+            if let artPath = media.art ?? media.thumb {
+                let artworkItem = AVMutableMetadataItem()
+                artworkItem.identifier = .commonIdentifierArtworkURI
+                var artURLString = baseURL.absoluteString + artPath
+                if let token = token {
+                    artURLString += "?X-Plex-Token=\(token)"
+                }
+                artworkItem.value = artURLString as NSString
+                externalMetadata.append(artworkItem)
+            }
+
+            // Set external metadata on player item for transport bar and Info panel
             if let playerItem = self.playerItem {
                 playerItem.externalMetadata = externalMetadata
-                print("🎬 [Player] Set external metadata for system Info panel: \(externalMetadata.count) items")
+                print("🎬 [Player] Set external metadata: title='\(titleItem.value ?? "nil")', subtitle='\(subtitleItem.value ?? "nil")'")
             }
         }
         #endif
