@@ -319,7 +319,8 @@ struct MediaDetailContent: View {
         // REMOVED: .background(ZStack { artwork + gradient })
         // REMOVED: .clipShape(RoundedRectangle(...))
         // REMOVED: .overlay(RoundedRectangle(...).strokeBorder(...))
-        .task {
+        // Use task(id:) so it re-runs when tmdbId becomes available after detailed metadata loads
+        .task(id: media.tmdbId) {
             await loadNetworkLogo()
         }
     }
@@ -328,12 +329,24 @@ struct MediaDetailContent: View {
     private func loadNetworkLogo() async {
         // Only fetch for TV shows with a TMDB ID
         guard media.type == "show", let tmdbId = media.tmdbId else {
+            #if DEBUG
+            if media.type == "show" {
+                print("🎬 [TMDB] No TMDB ID for show: \(media.title), Guid count: \(media.Guid?.count ?? 0)")
+            }
+            #endif
             return
         }
+
+        #if DEBUG
+        print("🎬 [TMDB] Fetching network logo for TMDB ID: \(tmdbId) (\(media.title))")
+        #endif
 
         let logoURL = await TMDBService.shared.fetchPrimaryNetworkLogoURL(forTVId: tmdbId)
         await MainActor.run {
             self.networkLogoURL = logoURL
+            #if DEBUG
+            print("🎬 [TMDB] Network logo URL: \(logoURL?.absoluteString ?? "nil")")
+            #endif
         }
     }
 

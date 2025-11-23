@@ -160,12 +160,23 @@ struct HomeView: View {
                         }
 
                         // Other hub rows - exactly 4 cards visible per row
-                        ForEach(hubs.filter {
+                        let filteredHubs = hubs.filter {
                             let title = $0.title.lowercased()
                             return !title.contains("recently added") &&
                                    !title.contains("on deck") &&
                                    !title.contains("continue watching")
-                        }) { hub in
+                        }
+
+                        let _ = {
+                            #if DEBUG
+                            print("🏠 [HomeView] Total hubs: \(hubs.count), Filtered hubs: \(filteredHubs.count)")
+                            for hub in filteredHubs {
+                                print("🏠 [HomeView]   Hub: '\(hub.title)' - metadata: \(hub.metadata?.count ?? 0) items")
+                            }
+                            #endif
+                        }()
+
+                        ForEach(filteredHubs) { hub in
                             HubRow(hub: hub) { item in
                                 selectedMedia = item
                             }
