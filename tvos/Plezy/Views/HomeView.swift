@@ -160,21 +160,22 @@ struct HomeView: View {
                         }
 
                         // Other hub rows - exactly 4 cards visible per row
+                        // Only filter out Continue Watching and On Deck (shown separately)
+                        // Keep "Recently Added Movies/TV" etc as they are valuable content rows
                         let filteredHubs = hubs.filter {
                             let title = $0.title.lowercased()
-                            return !title.contains("recently added") &&
-                                   !title.contains("on deck") &&
+                            return !title.contains("on deck") &&
                                    !title.contains("continue watching")
                         }
 
+                        #if DEBUG
                         let _ = {
-                            #if DEBUG
                             print("🏠 [HomeView] Total hubs: \(hubs.count), Filtered hubs: \(filteredHubs.count)")
                             for hub in filteredHubs {
                                 print("🏠 [HomeView]   Hub: '\(hub.title)' - metadata: \(hub.metadata?.count ?? 0) items")
                             }
-                            #endif
                         }()
+                        #endif
 
                         ForEach(filteredHubs) { hub in
                             HubRow(hub: hub) { item in
