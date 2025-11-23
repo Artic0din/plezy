@@ -427,6 +427,9 @@ struct MediaDetailContent: View {
                             .scaledToFit()
                             .frame(height: 28)
                             .frame(maxWidth: 80)
+                            // White glow for visibility on dark backgrounds
+                            .shadow(color: .white.opacity(0.8), radius: 1, x: 0, y: 0)
+                            .shadow(color: .white.opacity(0.4), radius: 3, x: 0, y: 0)
                     case .failure, .empty:
                         EmptyView()
                     @unknown default:

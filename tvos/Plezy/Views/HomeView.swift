@@ -25,6 +25,7 @@ struct HomeView: View {
     @State private var heroTimer: Timer?
     @State private var scrollOffset: CGFloat = 0
     @State private var shouldShowHero = true
+    @State private var isReturningFromDetail = false
 
     private let heroDisplayDuration: TimeInterval = 7.0
     private let heroTimerInterval: TimeInterval = 0.1  // 100ms for efficiency (was 50ms)
@@ -52,12 +53,15 @@ struct HomeView: View {
             }
         }
         .onAppear {
-            print("🏠 [HomeView] View appeared")
+            print("🏠 [HomeView] View appeared, isReturningFromDetail: \(isReturningFromDetail)")
             startHeroTimer()
-            // Refresh Continue Watching on every appear to ensure up-to-date data
-            Task {
-                await refreshOnDeck()
+            // Only refresh if not returning from detail view (prevents focus loss flash)
+            if !isReturningFromDetail {
+                Task {
+                    await refreshOnDeck()
+                }
             }
+            isReturningFromDetail = false
         }
         .onDisappear {
             stopHeroTimer()
@@ -73,6 +77,16 @@ struct HomeView: View {
                 .onAppear {
                     print("📱 [HomeView] MediaDetailView appeared for: \(media.title)")
                 }
+                .onDisappear {
+                    // Mark that we're returning to prevent immediate refresh that causes focus flash
+                    isReturningFromDetail = true
+                    print("📱 [HomeView] MediaDetailView disappeared, deferring refresh")
+                    // Defer the refresh to allow focus to settle
+                    Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
+                        await refreshOnDeck()
+                    }
+                }
         }
         .fullScreenCover(item: $playingMedia) { media in
             let _ = print("🎬 [HomeView] FullScreenCover presenting VideoPlayerView for: \(media.title)")
@@ -80,6 +94,11 @@ struct HomeView: View {
                 .environmentObject(authService)
                 .onAppear {
                     print("🎬 [HomeView] VideoPlayerView appeared for: \(media.title)")
+                }
+                .onDisappear {
+                    // Mark that we're returning to prevent immediate refresh that causes focus flash
+                    isReturningFromDetail = true
+                    print("🎬 [HomeView] VideoPlayerView disappeared, deferring refresh")
                 }
         }
         .sheet(isPresented: $showServerSelection) {
@@ -104,10 +123,11 @@ struct HomeView: View {
             }
         }
         .onChange(of: playingMedia) { oldValue, newValue in
-            // Refresh Continue Watching when returning from video playback
+            // Refresh Continue Watching when returning from video playback (with delay for focus)
             if oldValue != nil && newValue == nil {
-                print("🏠 [HomeView] Video player dismissed, refreshing Continue Watching...")
+                print("🏠 [HomeView] Video player dismissed, deferring Continue Watching refresh...")
                 Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay for focus
                     await refreshOnDeck()
                 }
             }
