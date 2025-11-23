@@ -155,12 +155,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
         }
 
         #if os(tvOS)
-        // Configure content tabs when metadata is available
-        if let detailedMedia = playerManager.detailedMedia {
-            configureContentTabs(controller: uiViewController, media: detailedMedia, context: context)
-        }
-
-        // Configure content proposal for next episode
+        // Configure content proposal for next episode (uses system "Up Next" UI)
         if let nextEpisode = playerManager.nextEpisode, playerManager.shouldShowContentProposal {
             configureContentProposal(controller: uiViewController, nextEpisode: nextEpisode, context: context)
         }
@@ -172,43 +167,6 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
     }
 
     #if os(tvOS)
-    /// Configure content tabs (Info panel) for tvOS
-    private func configureContentTabs(controller: AVPlayerViewController, media: PlexMetadata, context: Context) {
-        // Only configure once
-        guard controller.customInfoViewControllers.isEmpty else { return }
-
-        // Create info tab with metadata
-        let infoVC = createInfoViewController(for: media)
-        controller.customInfoViewControllers = [infoVC]
-
-        // Add contextual actions (buttons in transport bar)
-        var actions: [UIAction] = []
-
-        // Add "More Like This" action if available
-        actions.append(UIAction(
-            title: "More Info",
-            image: UIImage(systemName: "info.circle")
-        ) { _ in
-            print("📺 [ContentTabs] More Info tapped")
-        })
-
-        controller.contextualActions = actions
-
-        print("📺 [ContentTabs] Configured info tab and contextual actions")
-    }
-
-    /// Create the info view controller for content tabs
-    private func createInfoViewController(for media: PlexMetadata) -> UIViewController {
-        let hostingController = UIHostingController(rootView: PlayerInfoView(media: media))
-        hostingController.title = "Info"
-        hostingController.tabBarItem = UITabBarItem(
-            title: "Info",
-            image: UIImage(systemName: "info.circle"),
-            selectedImage: UIImage(systemName: "info.circle.fill")
-        )
-        return hostingController
-    }
-
     /// Configure content proposal for next episode
     private func configureContentProposal(
         controller: AVPlayerViewController,
@@ -317,119 +275,6 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             completion(false)
         }
         #endif
-    }
-}
-
-// MARK: - Player Info View (Content Tab)
-
-struct PlayerInfoView: View {
-    let media: PlexMetadata
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Title
-                Text(displayTitle)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-
-                // Episode info for TV shows
-                if media.type == "episode" {
-                    if let showTitle = media.grandparentTitle {
-                        Text(showTitle)
-                            .font(.title2)
-                            .foregroundColor(.gray)
-                    }
-
-                    if let season = media.parentIndex, let episode = media.index {
-                        Text("Season \(season), Episode \(episode)")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                // Metadata row
-                HStack(spacing: 16) {
-                    if let year = media.year {
-                        Text(String(year))
-                            .foregroundColor(.secondary)
-                    }
-
-                    if let duration = media.duration {
-                        Text(formatDuration(duration))
-                            .foregroundColor(.secondary)
-                    }
-
-                    if let rating = media.contentRating {
-                        Text(rating)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.secondary.opacity(0.3))
-                            .cornerRadius(4)
-                    }
-
-                    if let audienceRating = media.audienceRating {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .foregroundColor(.yellow)
-                            Text(String(format: "%.1f", audienceRating))
-                        }
-                    }
-                }
-                .font(.subheadline)
-
-                // Synopsis
-                if let summary = media.summary {
-                    Text(summary)
-                        .font(.body)
-                        .foregroundColor(.white.opacity(0.9))
-                        .lineLimit(nil)
-                }
-
-                // Cast & Crew
-                if let roles = media.role, !roles.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Cast")
-                            .font(.headline)
-                            .foregroundColor(.white)
-
-                        Text(roles.prefix(5).map { $0.tag }.joined(separator: ", "))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                if let directors = media.director, !directors.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Director")
-                            .font(.headline)
-                            .foregroundColor(.white)
-
-                        Text(directors.map { $0.tag }.joined(separator: ", "))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Spacer()
-            }
-            .padding(40)
-        }
-        .background(Color.black)
-    }
-
-    private var displayTitle: String {
-        if media.type == "episode" {
-            return media.title
-        }
-        return media.title
-    }
-
-    private func formatDuration(_ ms: Int) -> String {
-        let mins = ms / 1000 / 60
-        let hrs = mins / 60
-        return hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
     }
 }
 
@@ -786,12 +631,13 @@ class VideoPlayerManager: ObservableObject {
             nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
         }
 
-        // External content identifiers for tvOS integration
+        // External metadata for tvOS Info panel (shown when user swipes down or presses Info)
+        // This populates the system-standard AVPlayerViewController Info tab
         #if os(tvOS)
         if #available(tvOS 16.0, *) {
             var externalMetadata: [AVMetadataItem] = []
 
-            // Set title
+            // Title - for episodes, show the series name; for movies, show the movie title
             let titleItem = AVMutableMetadataItem()
             titleItem.identifier = .commonIdentifierTitle
             if media.type == "episode", let showTitle = media.grandparentTitle {
@@ -799,35 +645,65 @@ class VideoPlayerManager: ObservableObject {
             } else {
                 titleItem.value = media.title as NSString
             }
-            titleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
             externalMetadata.append(titleItem)
 
-            // Set subtitle for TV episodes: "Sx, Ex - Episode Name"
+            // Subtitle - for TV episodes: "Sx, Ex - Episode Name"
             if media.type == "episode" {
                 let subtitleItem = AVMutableMetadataItem()
                 subtitleItem.identifier = .iTunesMetadataTrackSubTitle
                 if let season = media.parentIndex, let episode = media.index {
-                    subtitleItem.value = "S\(season), E\(episode) - \(media.title)" as NSString
+                    subtitleItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
                 } else {
                     subtitleItem.value = media.title as NSString
                 }
-                subtitleItem.dataType = kCMMetadataBaseDataType_UTF8 as String
                 externalMetadata.append(subtitleItem)
             }
 
-            // Add description
+            // Description / Synopsis
             if let summary = media.summary {
                 let descItem = AVMutableMetadataItem()
                 descItem.identifier = .commonIdentifierDescription
                 descItem.value = summary as NSString
-                descItem.dataType = kCMMetadataBaseDataType_UTF8 as String
                 externalMetadata.append(descItem)
             }
 
-            // Set external metadata on player item
+            // Genre
+            if let genres = media.genre, let firstGenre = genres.first {
+                let genreItem = AVMutableMetadataItem()
+                genreItem.identifier = .quickTimeMetadataGenre
+                genreItem.value = firstGenre.tag as NSString
+                externalMetadata.append(genreItem)
+            }
+
+            // Year / Creation date
+            if let year = media.year {
+                let yearItem = AVMutableMetadataItem()
+                yearItem.identifier = .commonIdentifierCreationDate
+                yearItem.value = "\(year)" as NSString
+                externalMetadata.append(yearItem)
+            }
+
+            // Content Rating (e.g., "TV-MA", "PG-13")
+            if let contentRating = media.contentRating {
+                let ratingItem = AVMutableMetadataItem()
+                // Use iTunes content rating identifier
+                ratingItem.identifier = .iTunesMetadataContentRating
+                ratingItem.value = contentRating as NSString
+                externalMetadata.append(ratingItem)
+            }
+
+            // Studio/Network
+            if let studio = media.studio {
+                let studioItem = AVMutableMetadataItem()
+                studioItem.identifier = .iTunesMetadataPublisher
+                studioItem.value = studio as NSString
+                externalMetadata.append(studioItem)
+            }
+
+            // Set external metadata on player item for the system Info panel
             if let playerItem = self.playerItem {
                 playerItem.externalMetadata = externalMetadata
-                print("🎬 [Player] Set external metadata with \(externalMetadata.count) items")
+                print("🎬 [Player] Set external metadata for system Info panel: \(externalMetadata.count) items")
             }
         }
         #endif
