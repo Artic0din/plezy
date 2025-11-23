@@ -54,6 +54,9 @@ struct VideoPlayerView: View {
                         print("👋 [VideoPlayerView] TVPlayerViewController disappeared for: \(media.title)")
                         playerManager.cleanup()
                     }
+
+                // Skip Intro/Credits overlay buttons
+                SkipButtonOverlay(playerManager: playerManager)
             } else if playerManager.isLoading {
                 VStack(spacing: 20) {
                     ProgressView()
@@ -437,6 +440,123 @@ struct PlayerInfoView: View {
     }
 }
 
+// MARK: - Skip Button Overlay
+
+/// Overlay view for Skip Intro and Skip Credits buttons
+/// Positioned at bottom-right to match Netflix/Apple TV+ style
+struct SkipButtonOverlay: View {
+    @ObservedObject var playerManager: VideoPlayerManager
+    @FocusState private var isSkipIntroFocused: Bool
+    @FocusState private var isSkipCreditsFocused: Bool
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 16) {
+                    // Skip Intro button
+                    if playerManager.showSkipIntroButton {
+                        Button {
+                            playerManager.skipIntro()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "forward.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Text("Skip Intro")
+                                    .font(.system(size: 24, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .buttonStyle(SkipButtonStyle())
+                        .focused($isSkipIntroFocused)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                    }
+
+                    // Skip Credits button
+                    if playerManager.showSkipCreditsButton {
+                        Button {
+                            playerManager.skipCredits()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "forward.fill")
+                                    .font(.system(size: 20, weight: .semibold))
+                                Text("Skip Credits")
+                                    .font(.system(size: 24, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                        }
+                        .buttonStyle(SkipButtonStyle())
+                        .focused($isSkipCreditsFocused)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                    }
+                }
+                .padding(.trailing, 80)
+                .padding(.bottom, 120)
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.showSkipIntroButton)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: playerManager.showSkipCreditsButton)
+    }
+}
+
+/// Button style for Skip Intro/Credits buttons
+/// Uses Liquid Glass styling to match the rest of the app
+struct SkipButtonStyle: ButtonStyle {
+    @Environment(\.isFocused) private var isFocused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 32)
+            .padding(.vertical, 16)
+            .background(
+                ZStack {
+                    // Dark dimming layer for contrast
+                    Capsule()
+                        .fill(Color.black.opacity(0.5))
+
+                    // Clear glass material
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.9))
+
+                    // Beacon gradient on focus
+                    if isFocused {
+                        Capsule()
+                            .fill(Color.beaconGradient)
+                            .opacity(0.35)
+                    }
+                }
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: isFocused ? [.white.opacity(0.6), .white.opacity(0.3)] : [.white.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: isFocused ? 2 : 1
+                    )
+            )
+            .shadow(
+                color: isFocused ? Color.beaconPurple.opacity(0.5) : Color.black.opacity(0.4),
+                radius: isFocused ? 20 : 10,
+                x: 0,
+                y: isFocused ? 8 : 4
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : (isFocused ? 1.05 : 1.0))
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isFocused)
+    }
+}
+
 // MARK: - Video Player Manager
 
 @MainActor
@@ -457,6 +577,12 @@ class VideoPlayerManager: ObservableObject {
     @Published var detailedMedia: PlexMetadata?
     @Published var shouldShowContentProposal: Bool = false
     @Published var playbackMethod: PlexAPIClient.PlaybackDecision.PlaybackMethod = .directPlay
+
+    // Skip intro state
+    @Published var introMarker: PlexMediaMarker?
+    @Published var showSkipIntroButton: Bool = false
+    @Published var creditsMarker: PlexMediaMarker?
+    @Published var showSkipCreditsButton: Bool = false
 
     // Time at which to show content proposal (30 seconds before end)
     var contentProposalTime: CMTime {
@@ -607,10 +733,10 @@ class VideoPlayerManager: ObservableObject {
                 await fetchNextEpisode(client: client)
             }
 
-            // Configure skip intro if available (tvOS 16.0+)
+            // Configure skip intro/credits markers (tvOS 16.0+)
             #if os(tvOS)
             if #available(tvOS 16.0, *) {
-                await configureSkipIntro(for: ratingKey, client: client)
+                await configureSkipMarkers(for: ratingKey, client: client)
             }
             #endif
 
@@ -925,7 +1051,8 @@ class VideoPlayerManager: ObservableObject {
     }
 
     private func setupProgressTracking(client: PlexAPIClient, player: AVPlayer, ratingKey: String) {
-        let interval = CMTime(seconds: 30, preferredTimescale: 600)
+        // Use shorter interval for responsive skip button display
+        let interval = CMTime(seconds: 1, preferredTimescale: 600)
 
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self,
@@ -938,22 +1065,51 @@ class VideoPlayerManager: ObservableObject {
             let totalDuration = CMTimeGetSeconds(duration)
             let timeRemaining = totalDuration - currentTime
 
-            // Update timeline
-            Task {
-                do {
-                    try await client.updateTimeline(
-                        ratingKey: ratingKey,
-                        state: player.rate > 0 ? .playing : .paused,
-                        time: Int(currentTime * 1000),
-                        duration: Int(totalDuration * 1000)
-                    )
-
-                    // Mark as watched when 90% complete
-                    if currentTime / totalDuration > 0.9 {
-                        try await client.scrobble(ratingKey: ratingKey)
+            // Check if within intro window - show Skip Intro button
+            if let intro = self.introMarker {
+                let inIntro = currentTime >= intro.start && currentTime < intro.end
+                if inIntro != self.showSkipIntroButton {
+                    Task { @MainActor in
+                        self.showSkipIntroButton = inIntro
+                        if inIntro {
+                            print("⏩ [SkipIntro] Showing button - in intro window")
+                        }
                     }
-                } catch {
-                    print("Error updating timeline: \(error)")
+                }
+            }
+
+            // Check if within credits window - show Skip Credits button
+            if let credits = self.creditsMarker {
+                let inCredits = currentTime >= credits.start && currentTime < credits.end
+                if inCredits != self.showSkipCreditsButton {
+                    Task { @MainActor in
+                        self.showSkipCreditsButton = inCredits
+                        if inCredits {
+                            print("⏩ [SkipCredits] Showing button - in credits window")
+                        }
+                    }
+                }
+            }
+
+            // Update timeline every 30 seconds (not every second)
+            let shouldUpdateTimeline = Int(currentTime) % 30 == 0
+            if shouldUpdateTimeline {
+                Task {
+                    do {
+                        try await client.updateTimeline(
+                            ratingKey: ratingKey,
+                            state: player.rate > 0 ? .playing : .paused,
+                            time: Int(currentTime * 1000),
+                            duration: Int(totalDuration * 1000)
+                        )
+
+                        // Mark as watched when 90% complete
+                        if currentTime / totalDuration > 0.9 {
+                            try await client.scrobble(ratingKey: ratingKey)
+                        }
+                    } catch {
+                        print("Error updating timeline: \(error)")
+                    }
                 }
             }
 
@@ -1159,16 +1315,21 @@ class VideoPlayerManager: ObservableObject {
         #endif
     }
 
-    // MARK: - Skip Intro
+    // MARK: - Skip Intro/Credits
 
     @available(tvOS 16.0, *)
-    private func configureSkipIntro(for ratingKey: String, client: PlexAPIClient) async {
+    private func configureSkipMarkers(for ratingKey: String, client: PlexAPIClient) async {
         do {
             let markers = try await client.getMediaMarkers(ratingKey: ratingKey)
 
-            if let introMarker = markers.first(where: { $0.type == "intro" }) {
-                let startTime = CMTime(seconds: introMarker.start, preferredTimescale: 600)
-                let endTime = CMTime(seconds: introMarker.end, preferredTimescale: 600)
+            // Store intro marker for skip button
+            if let intro = markers.first(where: { $0.type == "intro" }) {
+                self.introMarker = intro
+                print("⏩ [SkipIntro] Found intro marker at \(intro.start)s - \(intro.end)s")
+
+                // Also configure as interstitial for timeline display
+                let startTime = CMTime(seconds: intro.start, preferredTimescale: 600)
+                let endTime = CMTime(seconds: intro.end, preferredTimescale: 600)
                 let duration = CMTimeSubtract(endTime, startTime)
                 let timeRange = CMTimeRange(start: startTime, duration: duration)
 
@@ -1176,13 +1337,36 @@ class VideoPlayerManager: ObservableObject {
                 if let playerItem = self.playerItem {
                     let interstitial = AVInterstitialTimeRange(timeRange: timeRange)
                     playerItem.interstitialTimeRanges = [interstitial]
-                    print("⏩ [SkipIntro] Configured at \(introMarker.start)s - \(introMarker.end)s")
                 }
                 #endif
             }
+
+            // Store credits marker for skip button
+            if let credits = markers.first(where: { $0.type == "credits" }) {
+                self.creditsMarker = credits
+                print("⏩ [SkipCredits] Found credits marker at \(credits.start)s - \(credits.end)s")
+            }
         } catch {
-            print("⚠️ [SkipIntro] Failed to fetch intro markers: \(error)")
+            print("⚠️ [SkipMarkers] Failed to fetch markers: \(error)")
         }
+    }
+
+    /// Skip intro - seek to end of intro marker
+    func skipIntro() {
+        guard let intro = introMarker else { return }
+        let seekTime = CMTime(seconds: intro.end, preferredTimescale: 600)
+        player?.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        showSkipIntroButton = false
+        print("⏩ [SkipIntro] Skipped to \(intro.end)s")
+    }
+
+    /// Skip credits - seek to end of credits marker (triggers content proposal if available)
+    func skipCredits() {
+        guard let credits = creditsMarker else { return }
+        let seekTime = CMTime(seconds: credits.end, preferredTimescale: 600)
+        player?.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        showSkipCreditsButton = false
+        print("⏩ [SkipCredits] Skipped to \(credits.end)s")
     }
 
     // MARK: - Cleanup

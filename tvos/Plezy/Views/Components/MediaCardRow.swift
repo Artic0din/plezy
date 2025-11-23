@@ -139,10 +139,14 @@ struct MediaCardRow<Content: View>: View {
 
 // MARK: - Up Next Row
 
-/// Specialized row for Up Next (Continue Watching) with play action
+/// Specialized row for Up Next (Continue Watching) with play action and context menu
 struct ContinueWatchingRow: View {
     let items: [PlexMetadata]
     let onPlay: (PlexMetadata) -> Void
+    /// Optional callback for context menu actions
+    var onContextAction: ((MediaCardContextAction, PlexMetadata) -> Void)?
+
+    @State private var selectedItem: PlexMetadata?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -155,19 +159,11 @@ struct ContinueWatchingRow: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: CardRowLayout.cardSpacing) {
                     ForEach(items) { item in
-                        MediaCard(
-                            media: item,
-                            config: .custom(
-                                width: CardRowLayout.cardWidth,
-                                height: CardRowLayout.cardHeight,
-                                showProgress: true,
-                                showLabel: .inside,
-                                showLogo: true,
-                                showEpisodeLabelBelow: item.type == "episode"
-                            )
-                        ) {
-                            onPlay(item)
-                        }
+                        ContinueWatchingCard(
+                            item: item,
+                            onPlay: onPlay,
+                            onContextAction: onContextAction
+                        )
                     }
                 }
                 .padding(.horizontal, CardRowLayout.horizontalPadding)
@@ -177,6 +173,51 @@ struct ContinueWatchingRow: View {
         .padding(.bottom, 60)
         .id("continueWatching")
         .focusSection()
+    }
+}
+
+/// Individual card in Continue Watching row with context menu support
+struct ContinueWatchingCard: View {
+    let item: PlexMetadata
+    let onPlay: (PlexMetadata) -> Void
+    var onContextAction: ((MediaCardContextAction, PlexMetadata) -> Void)?
+
+    var body: some View {
+        MediaCard(
+            media: item,
+            config: .custom(
+                width: CardRowLayout.cardWidth,
+                height: CardRowLayout.cardHeight,
+                showProgress: true,
+                showLabel: .inside,
+                showLogo: true,
+                showEpisodeLabelBelow: item.type == "episode"
+            )
+        ) {
+            onPlay(item)
+        }
+        // Add context menu for Continue Watching items
+        .contextMenu {
+            Button {
+                onContextAction?(.removeFromContinueWatching, item)
+            } label: {
+                Label("Remove from Continue Watching", systemImage: "xmark.circle")
+            }
+
+            Button {
+                onContextAction?(.markWatched, item)
+            } label: {
+                Label("Mark as Watched", systemImage: "checkmark.circle")
+            }
+
+            if item.isWatched {
+                Button {
+                    onContextAction?(.markUnwatched, item)
+                } label: {
+                    Label("Mark as Unwatched", systemImage: "circle")
+                }
+            }
+        }
     }
 }
 

@@ -76,10 +76,13 @@ struct MediaCardConfig {
 
 /// Unified media card component that maintains consistent height and appearance
 /// All content (image, progress, labels) fits within a fixed frame to prevent layout shifts
+/// Features Liquid Glass styling with tvOS parallax/focus effects
 struct MediaCard: View {
     let media: PlexMetadata
     let config: MediaCardConfig
     let action: () -> Void
+    /// Optional context menu actions for the card
+    var contextMenuActions: [MediaCardContextAction]?
 
     @EnvironmentObject var authService: PlexAuthService
     @FocusState private var isFocused: Bool
@@ -87,17 +90,19 @@ struct MediaCard: View {
     init(
         media: PlexMetadata,
         config: MediaCardConfig = .continueWatching,
+        contextMenuActions: [MediaCardContextAction]? = nil,
         action: @escaping () -> Void
     ) {
         self.media = media
         self.config = config
+        self.contextMenuActions = contextMenuActions
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
-                // Main card
+                // Main card with Liquid Glass styling
                 ZStack(alignment: .bottomLeading) {
                     // Layer 1: Background image
                     CachedAsyncImage(url: artURL) { image in
@@ -115,16 +120,36 @@ struct MediaCard: View {
                     }
                     .frame(width: config.width, height: config.height)
 
-                    // Layer 2: Gradient overlay for text contrast
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color.black.opacity(0.0),
-                            Color.black.opacity(0.3),
-                            Color.black.opacity(config.showLabel == .inside || config.showProgress ? 0.8 : 0.5)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    // Layer 2: Liquid Glass gradient overlay with vibrancy
+                    ZStack {
+                        // Base gradient for text contrast
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.black.opacity(0.0),
+                                Color.black.opacity(0.3),
+                                Color.black.opacity(config.showLabel == .inside || config.showProgress ? 0.8 : 0.5)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+
+                        // Liquid Glass edge highlight on focus
+                        if isFocused {
+                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.4),
+                                            Color.white.opacity(0.15),
+                                            Color.beaconPurple.opacity(0.2)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        }
+                    }
 
                     // Layer 3: Logo/Title overlay (if enabled and inside)
                     if config.showLogo && config.showLabel == .inside {
@@ -163,9 +188,10 @@ struct MediaCard: View {
                         VStack {
                             Spacer()
                             ZStack(alignment: .leading) {
-                                // Background capsule - full width
+                                // Background capsule - full width with glass effect
                                 Capsule()
-                                    .fill(.white.opacity(0.3))
+                                    .fill(.ultraThinMaterial)
+                                    .opacity(0.5)
                                     .frame(width: config.width - 24, height: 6)
 
                                 // Progress capsule - proportional width
@@ -207,11 +233,18 @@ struct MediaCard: View {
                 }
                 .frame(width: config.width, height: config.height)
                 .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge, style: .continuous))
+                // Enhanced shadow with focus state
                 .shadow(
-                    color: .black.opacity(isFocused ? 0.7 : 0.4),
-                    radius: isFocused ? 40 : 16,
+                    color: isFocused ? Color.beaconPurple.opacity(0.3) : .black.opacity(0.4),
+                    radius: isFocused ? 45 : 16,
                     x: 0,
-                    y: isFocused ? 20 : 8
+                    y: isFocused ? 22 : 8
+                )
+                .shadow(
+                    color: .black.opacity(isFocused ? 0.5 : 0.3),
+                    radius: isFocused ? 20 : 8,
+                    x: 0,
+                    y: isFocused ? 10 : 4
                 )
 
                 // Episode label below the card (only for episodes when enabled)
@@ -224,10 +257,19 @@ struct MediaCard: View {
                 }
             }
         }
+        // Focus scale with slight 3D lift effect
         .scaleEffect(isFocused ? CardRowLayout.focusScale : 1.0)
+        // Subtle rotation for parallax feel (tvOS handles deeper parallax via system)
+        .rotation3DEffect(
+            .degrees(isFocused ? 2 : 0),
+            axis: (x: -1, y: 0, z: 0),
+            perspective: 0.5
+        )
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isFocused)
         .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)
+        // Apply context menu if actions provided
+        .modifier(MediaCardContextMenuModifier(actions: contextMenuActions))
         .onPlayPauseCommand {
             action()
         }
@@ -298,6 +340,72 @@ struct MediaCard: View {
 
         return URL(string: urlString)
     }
+}
+
+// MARK: - Context Menu Support
+
+/// Actions available in the media card context menu
+enum MediaCardContextAction: Identifiable {
+    case markWatched
+    case markUnwatched
+    case removeFromContinueWatching
+
+    var id: String {
+        switch self {
+        case .markWatched: return "markWatched"
+        case .markUnwatched: return "markUnwatched"
+        case .removeFromContinueWatching: return "removeFromContinueWatching"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .markWatched: return "Mark as Watched"
+        case .markUnwatched: return "Mark as Unwatched"
+        case .removeFromContinueWatching: return "Remove from Continue Watching"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .markWatched: return "checkmark.circle"
+        case .markUnwatched: return "circle"
+        case .removeFromContinueWatching: return "xmark.circle"
+        }
+    }
+}
+
+/// Callback for context menu action selection
+typealias MediaCardContextActionHandler = (MediaCardContextAction, PlexMetadata) -> Void
+
+/// View modifier that adds context menu to MediaCard
+struct MediaCardContextMenuModifier: ViewModifier {
+    let actions: [MediaCardContextAction]?
+
+    func body(content: Content) -> some View {
+        if let actions = actions, !actions.isEmpty {
+            content.contextMenu {
+                ForEach(actions) { action in
+                    Button {
+                        // Action is handled by the parent view via callback
+                        NotificationCenter.default.post(
+                            name: .mediaCardContextAction,
+                            object: action
+                        )
+                    } label: {
+                        Label(action.title, systemImage: action.systemImage)
+                    }
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Notification name for context menu actions
+extension Notification.Name {
+    static let mediaCardContextAction = Notification.Name("mediaCardContextAction")
 }
 
 // MARK: - Preview

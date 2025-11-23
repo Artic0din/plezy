@@ -175,9 +175,15 @@ struct HomeView: View {
 
                         // Continue Watching section - exactly 4 cards visible
                         if !onDeck.isEmpty {
-                            ContinueWatchingRow(items: onDeck) { item in
-                                playingMedia = item
-                            }
+                            ContinueWatchingRow(
+                                items: onDeck,
+                                onPlay: { item in
+                                    playingMedia = item
+                                },
+                                onContextAction: { action, item in
+                                    handleContextAction(action, for: item)
+                                }
+                            )
                         }
 
                         // Other hub rows - exactly 4 cards visible per row
@@ -478,6 +484,53 @@ struct HomeView: View {
             print("🔄 [HomeView] Continue Watching refreshed: \(fetchedOnDeck.count) items")
         } catch {
             print("🔴 [HomeView] Error refreshing Continue Watching: \(error)")
+        }
+    }
+
+    // MARK: - Context Menu Actions
+
+    /// Handle context menu actions for Continue Watching items
+    private func handleContextAction(_ action: MediaCardContextAction, for item: PlexMetadata) {
+        guard let client = authService.currentClient,
+              let ratingKey = item.ratingKey else {
+            print("⚠️ [HomeView] Cannot perform action - missing client or ratingKey")
+            return
+        }
+
+        Task {
+            do {
+                switch action {
+                case .markWatched:
+                    try await client.markAsWatched(ratingKey: ratingKey)
+                    // Remove from local list immediately for responsive UI
+                    await MainActor.run {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            onDeck.removeAll { $0.ratingKey == ratingKey }
+                        }
+                    }
+                    print("✅ [HomeView] Marked \(item.title) as watched")
+
+                case .markUnwatched:
+                    try await client.markAsUnwatched(ratingKey: ratingKey)
+                    // Refresh to get updated state
+                    await refreshOnDeck()
+                    print("✅ [HomeView] Marked \(item.title) as unwatched")
+
+                case .removeFromContinueWatching:
+                    try await client.removeFromContinueWatching(ratingKey: ratingKey)
+                    // Remove from local list immediately for responsive UI
+                    await MainActor.run {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            onDeck.removeAll { $0.ratingKey == ratingKey }
+                        }
+                    }
+                    print("✅ [HomeView] Removed \(item.title) from Continue Watching")
+                }
+            } catch {
+                print("🔴 [HomeView] Context action failed: \(error)")
+                // Refresh to sync state
+                await refreshOnDeck()
+            }
         }
     }
 }

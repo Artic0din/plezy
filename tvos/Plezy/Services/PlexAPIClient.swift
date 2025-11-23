@@ -524,6 +524,47 @@ class PlexAPIClient {
         )
     }
 
+    /// Mark an item as watched (scrobble)
+    /// This marks the entire movie/episode as watched
+    func markAsWatched(ratingKey: String) async throws {
+        try await scrobble(ratingKey: ratingKey)
+        // Invalidate cache for this item
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        Self.metadataCache.removeObject(forKey: cacheKey)
+        print("✅ [API] Marked \(ratingKey) as watched")
+    }
+
+    /// Mark an item as unwatched (unscrobble)
+    /// This removes watch status from the movie/episode
+    func markAsUnwatched(ratingKey: String) async throws {
+        try await unscrobble(ratingKey: ratingKey)
+        // Invalidate cache for this item
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        Self.metadataCache.removeObject(forKey: cacheKey)
+        print("✅ [API] Marked \(ratingKey) as unwatched")
+    }
+
+    /// Remove an item from Continue Watching by clearing its progress
+    /// This sets viewOffset to 0 without marking as watched
+    func removeFromContinueWatching(ratingKey: String) async throws {
+        // Clear the playback position by setting viewOffset to 0
+        // This removes it from On Deck without marking it watched
+        let queryItems = [
+            URLQueryItem(name: "ratingKey", value: ratingKey),
+            URLQueryItem(name: "state", value: "stopped"),
+            URLQueryItem(name: "time", value: "0"),
+            URLQueryItem(name: "duration", value: "0")
+        ]
+        let _: PlexMediaContainer<PlexMetadata> = try await request(
+            path: "/:/timeline",
+            queryItems: queryItems
+        )
+        // Invalidate cache for this item
+        let cacheKey = "\(baseURL.absoluteString)_\(ratingKey)" as NSString
+        Self.metadataCache.removeObject(forKey: cacheKey)
+        print("✅ [API] Removed \(ratingKey) from Continue Watching")
+    }
+
     // MARK: - Chapters
 
     func getChapters(ratingKey: String) async throws -> [PlexChapter] {
