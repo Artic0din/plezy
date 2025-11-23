@@ -14,6 +14,8 @@ struct BeaconApp: App {
     @StateObject private var authService = PlexAuthService()
     @StateObject private var settingsService = SettingsService()
     @StateObject private var storageService = StorageService()
+    // TabCoordinator at app level persists across auth state changes
+    @StateObject private var tabCoordinator = TabCoordinator.shared
 
     init() {
         print("🚀🚀🚀 [APP] Beacon app is starting up! 🚀🚀🚀")
@@ -28,6 +30,7 @@ struct BeaconApp: App {
                 .environmentObject(authService)
                 .environmentObject(settingsService)
                 .environmentObject(storageService)
+                .environmentObject(tabCoordinator)
                 .preferredColorScheme(settingsService.theme.colorScheme)
         }
     }

@@ -9,7 +9,8 @@ import SwiftUI
 
 struct MainTabView: View {
     @EnvironmentObject var authService: PlexAuthService
-    @StateObject private var tabCoordinator = TabCoordinator.shared
+    // Use injected TabCoordinator from app level (persists across auth state changes)
+    @EnvironmentObject var tabCoordinator: TabCoordinator
 
     var body: some View {
         TabView(selection: $tabCoordinator.selectedTab) {
@@ -50,7 +51,6 @@ struct MainTabView: View {
         .onAppear {
             print("📱 [MainTabView] MainTabView appeared")
         }
-        .environmentObject(tabCoordinator)
     }
 }
 
@@ -59,4 +59,5 @@ struct MainTabView: View {
         .environmentObject(PlexAuthService())
         .environmentObject(SettingsService())
         .environmentObject(StorageService())
+        .environmentObject(TabCoordinator.shared)
 }

@@ -9,12 +9,13 @@ import SwiftUI
 
 struct LibraryContentView: View {
     let library: PlexLibrary
+    // Navigation path binding from parent NavigationStack
+    @Binding var navigationPath: NavigationPath
     @EnvironmentObject var authService: PlexAuthService
     @Environment(\.dismiss) var dismiss
     @State private var items: [PlexMetadata] = []
     @State private var filteredItems: [PlexMetadata] = []
     @State private var isLoading = true
-    @State private var selectedMedia: PlexMetadata?
     @State private var filterStatus: FilterStatus = .all
     @State private var sortOption: SortOption = .recentlyAdded
     @State private var errorMessage: String?
@@ -152,9 +153,7 @@ struct LibraryContentView: View {
                             isLoadingMore: isLoadingMore,
                             onItemTapped: { item in
                                 print("🎯 [LibraryContent] Item tapped in \(library.title): \(item.title)")
-                                print("🎯 [LibraryContent] Setting selectedMedia to trigger sheet")
-                                selectedMedia = item
-                                print("🎯 [LibraryContent] selectedMedia set to: \(String(describing: selectedMedia?.title))")
+                                navigationPath.append(item)
                             },
                             onLoadMore: {
                                 Task {
@@ -193,19 +192,12 @@ struct LibraryContentView: View {
                 await loadContent()
             }
         }
-        .fullScreenCover(item: $selectedMedia) { media in
-            let _ = print("📱 [LibraryContent] FullScreenCover presenting MediaDetailView for: \(media.title)")
-            MediaDetailView(media: media)
-                .environmentObject(authService)
-                .onAppear {
-                    print("📱 [LibraryContent] MediaDetailView appeared for: \(media.title)")
-                }
-        }
-        .onChange(of: selectedMedia) { oldValue, newValue in
+        .onChange(of: navigationPath) { oldValue, newValue in
             // Refresh content when returning from media detail (watch status may have changed)
-            if oldValue != nil && newValue == nil {
+            if oldValue.count > newValue.count {
                 print("📚 [LibraryContent] Returned from media detail, refreshing content...")
                 Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay for focus
                     await refreshContent()
                 }
             }

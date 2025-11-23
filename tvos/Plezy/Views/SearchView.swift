@@ -13,16 +13,18 @@ struct SearchView: View {
     @State private var searchQuery = ""
     @State private var searchResults: [PlexMetadata] = []
     @State private var isSearching = false
-    @State private var selectedMedia: PlexMetadata?
+    // Navigation path for hierarchical navigation
+    @State private var navigationPath = NavigationPath()
     @State private var searchTask: Task<Void, Never>?
 
     private let cache = CacheService.shared
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        NavigationStack(path: $navigationPath) {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 30) {
+                VStack(alignment: .leading, spacing: 30) {
                 // Spacer for top navigation
                 Color.clear.frame(height: 100)
 
@@ -127,7 +129,7 @@ struct SearchView: View {
                         SearchResultsView(
                             results: searchResults,
                             onItemTapped: { item in
-                                selectedMedia = item
+                                navigationPath.append(item)
                             }
                         )
                         .padding(.top, 20)
@@ -135,10 +137,10 @@ struct SearchView: View {
                     }
                 }
             }
-        }
-        .fullScreenCover(item: $selectedMedia) { media in
-            MediaDetailView(media: media)
-                .environmentObject(authService)
+            .navigationDestination(for: PlexMetadata.self) { media in
+                MediaDetailView(media: media)
+                    .environmentObject(authService)
+            }
         }
     }
 

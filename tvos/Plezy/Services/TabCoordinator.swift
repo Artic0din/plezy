@@ -9,7 +9,7 @@ import SwiftUI
 import Combine
 
 /// Tab selection options for main navigation
-enum TabSelection: String, CaseIterable {
+enum TabSelection: String, CaseIterable, Codable {
     case home = "Home"
     case movies = "Movies"
     case tvShows = "TV Shows"
@@ -39,14 +39,31 @@ enum TabSelection: String, CaseIterable {
 
 /// Coordinates tab selection across the entire app
 /// Allows any view to programmatically switch tabs
+/// Persists last selected tab to UserDefaults for session continuity
 class TabCoordinator: ObservableObject {
-    @Published var selectedTab: TabSelection = .home
+    @Published var selectedTab: TabSelection = .home {
+        didSet {
+            // Persist tab selection
+            if let encoded = try? JSONEncoder().encode(selectedTab) {
+                UserDefaults.standard.set(encoded, forKey: Self.tabStorageKey)
+            }
+        }
+    }
 
-    /// Shared singleton instance
+    private static let tabStorageKey = "beacon_selected_tab"
+
+    /// Shared singleton instance - initialized once at app startup
     static let shared = TabCoordinator()
 
     private init() {
-        print("🔵 [TabCoordinator] Initialized")
+        // Restore last selected tab from storage
+        if let data = UserDefaults.standard.data(forKey: Self.tabStorageKey),
+           let savedTab = try? JSONDecoder().decode(TabSelection.self, from: data) {
+            self.selectedTab = savedTab
+            print("🔵 [TabCoordinator] Initialized with restored tab: \(savedTab.rawValue)")
+        } else {
+            print("🔵 [TabCoordinator] Initialized with default tab: Home")
+        }
     }
 
     /// Switch to a specific tab

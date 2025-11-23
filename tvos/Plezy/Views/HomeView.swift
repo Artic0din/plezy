@@ -15,7 +15,8 @@ struct HomeView: View {
     @State private var recentlyAdded: [PlexMetadata] = []
     @State private var hubs: [PlexHub] = []
     @State private var isLoading = true
-    @State private var selectedMedia: PlexMetadata?
+    // Navigation path for hierarchical navigation (detail views)
+    @State private var navigationPath = NavigationPath()
     @State private var playingMedia: PlexMetadata?
     @State private var showServerSelection = false
     @State private var noServerSelected = false
@@ -33,23 +34,40 @@ struct HomeView: View {
     private let cache = CacheService.shared
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        NavigationStack(path: $navigationPath) {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            if isLoading {
-                HomeViewSkeleton()
-            } else if let error = errorMessage {
-                errorView(error: error)
-            } else if noServerSelected {
-                noServerView
-            } else {
-                fullScreenHeroLayout
+                if isLoading {
+                    HomeViewSkeleton()
+                } else if let error = errorMessage {
+                    errorView(error: error)
+                } else if noServerSelected {
+                    noServerView
+                } else {
+                    fullScreenHeroLayout
+                }
+
+                // Offline banner overlay
+                VStack {
+                    OfflineBanner()
+                    Spacer()
+                }
             }
-
-            // Offline banner overlay
-            VStack {
-                OfflineBanner()
-                Spacer()
+            .navigationDestination(for: PlexMetadata.self) { media in
+                MediaDetailView(media: media)
+                    .environmentObject(authService)
+                    .onAppear {
+                        print("📱 [HomeView] MediaDetailView appeared for: \(media.title)")
+                    }
+                    .onDisappear {
+                        // Defer refresh to allow focus to settle after navigation pop
+                        print("📱 [HomeView] MediaDetailView disappeared, deferring refresh")
+                        Task {
+                            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay
+                            await refreshOnDeck()
+                        }
+                    }
             }
         }
         .onAppear {
@@ -70,24 +88,7 @@ struct HomeView: View {
             print("🏠 [HomeView] .task modifier triggered")
             await loadContent()
         }
-        .fullScreenCover(item: $selectedMedia) { media in
-            let _ = print("📱 [HomeView] FullScreenCover presenting MediaDetailView for: \(media.title)")
-            MediaDetailView(media: media)
-                .environmentObject(authService)
-                .onAppear {
-                    print("📱 [HomeView] MediaDetailView appeared for: \(media.title)")
-                }
-                .onDisappear {
-                    // Mark that we're returning to prevent immediate refresh that causes focus flash
-                    isReturningFromDetail = true
-                    print("📱 [HomeView] MediaDetailView disappeared, deferring refresh")
-                    // Defer the refresh to allow focus to settle
-                    Task {
-                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
-                        await refreshOnDeck()
-                    }
-                }
-        }
+        // Video player remains fullScreenCover (modal playback with AVPlayerViewController)
         .fullScreenCover(item: $playingMedia) { media in
             let _ = print("🎬 [HomeView] FullScreenCover presenting VideoPlayerView for: \(media.title)")
             VideoPlayerView(media: media)
@@ -199,7 +200,7 @@ struct HomeView: View {
 
                         ForEach(filteredHubs) { hub in
                             HubRow(hub: hub) { item in
-                                selectedMedia = item
+                                navigationPath.append(item)
                             }
                         }
 
