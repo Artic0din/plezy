@@ -424,9 +424,19 @@ class PlexAPIClient {
         print("📚 [API] OnDeck response - size: \(container.size), items: \(container.items.count)")
         #endif
 
+        // Filter out music content (match iOS/macOS behavior)
+        let videoItems = container.items.filter { item in
+            let type = item.type.lowercased()
+            return type != "artist" && type != "album" && type != "track"
+        }
+
+        #if DEBUG
+        print("📚 [API] OnDeck filtered (no music): \(videoItems.count) items")
+        #endif
+
         // Enrich episodes with show logos using parallel fetching
         // The onDeck endpoint returns episode metadata, but clearLogos belong to the show (grandparent) level.
-        var enrichedItems = container.items
+        var enrichedItems = videoItems
 
         // Collect unique keys that need fetching (episodes by grandparentRatingKey, movies by ratingKey)
         var showKeysToFetch: Set<String> = []

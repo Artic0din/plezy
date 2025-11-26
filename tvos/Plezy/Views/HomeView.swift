@@ -174,12 +174,11 @@ struct HomeView: View {
                         .frame(height: 720) // Fixed height - Continue Watching position locked
 
                         // Up Next / On Deck section - exactly 4 cards visible
-                        // Use the On Deck hub from Plex which includes both continue watching and next episodes
-                        // This matches what Plex shows in its "On Deck" / "Up Next" row
-                        let onDeckHub = hubs.first(where: { $0.title.lowercased().contains("on deck") })
-                        if let odHub = onDeckHub, let items = odHub.metadata, !items.isEmpty {
+                        // Use /library/onDeck endpoint (filtered for video content only, no music)
+                        // This matches iOS/macOS app behavior
+                        if !onDeck.isEmpty {
                             ContinueWatchingRow(
-                                items: items,
+                                items: onDeck,
                                 onPlay: { item in
                                     playingMedia = item
                                 },
@@ -395,10 +394,7 @@ struct HomeView: View {
             // Cache the results
             cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: fetchedHubs))
 
-            // Log On Deck hub items
-            let odHub = fetchedHubs.first(where: { $0.title.lowercased().contains("on deck") })
-            let odCount = odHub?.metadata?.count ?? 0
-            print("🏠 [HomeView] Content loaded successfully. On Deck: \(odCount) items from hub, Hubs: \(self.hubs.count), RecentlyAdded: \(self.recentlyAdded.count)")
+            print("🏠 [HomeView] Content loaded successfully. On Deck: \(fetchedOnDeck.count) items (filtered), Hubs: \(self.hubs.count), RecentlyAdded: \(self.recentlyAdded.count)")
             errorMessage = nil
         } catch {
             print("🔴 [HomeView] Error loading content: \(error)")
@@ -464,7 +460,7 @@ struct HomeView: View {
     }
 
     /// Lightweight refresh of the Continue Watching row after video playback
-    /// Continue Watching comes from the hubs data, so we refresh hubs
+    /// Uses /library/onDeck endpoint (filtered for video content only)
     private func refreshOnDeck() async {
         guard let client = authService.currentClient,
               let serverID = authService.selectedServer?.clientIdentifier else {
@@ -476,22 +472,15 @@ struct HomeView: View {
             // This is important when content is watched in other Plex clients
             client.clearMetadataCache()
 
-            // Fetch fresh hubs which includes the Continue Watching hub
-            let fetchedHubs = try await client.getHubs()
-            self.hubs = fetchedHubs
-
-            // Also fetch onDeck for cache compatibility
+            // Fetch fresh on deck (filtered for video content, no music)
             let fetchedOnDeck = try await client.getOnDeck()
             self.onDeck = fetchedOnDeck
 
             // Update cache
             let cacheKey = CacheService.homeKey(serverID: serverID)
-            cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: fetchedHubs))
+            cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: self.hubs))
 
-            // Log On Deck hub items
-            let odHub = fetchedHubs.first(where: { $0.title.lowercased().contains("on deck") })
-            let odCount = odHub?.metadata?.count ?? 0
-            print("🔄 [HomeView] Up Next/On Deck refreshed: \(odCount) items from hub")
+            print("🔄 [HomeView] Up Next/On Deck refreshed: \(fetchedOnDeck.count) items (filtered)")
         } catch {
             print("🔴 [HomeView] Error refreshing Continue Watching: \(error)")
         }
