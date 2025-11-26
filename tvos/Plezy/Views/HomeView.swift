@@ -73,10 +73,15 @@ struct HomeView: View {
         .onAppear {
             print("🏠 [HomeView] View appeared, isReturningFromDetail: \(isReturningFromDetail)")
             startHeroTimer()
-            // Only refresh if not returning from detail view (prevents focus loss flash)
+            // Invalidate cache to force fresh data (match iOS/macOS behavior)
+            if let serverID = authService.selectedServer?.clientIdentifier {
+                let cacheKey = CacheService.homeKey(serverID: serverID)
+                cache.invalidate(cacheKey)
+            }
+            // Refresh content unless returning from detail view (prevents focus loss flash)
             if !isReturningFromDetail {
                 Task {
-                    await refreshOnDeck()
+                    await loadContent() // Full refresh instead of just onDeck
                 }
             }
             isReturningFromDetail = false

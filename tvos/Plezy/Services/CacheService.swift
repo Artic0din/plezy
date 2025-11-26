@@ -22,9 +22,10 @@ class CacheService {
 
     private var cache: [String: Any] = [:]
 
-    // Default TTL: 5 minutes for home content, 10 minutes for libraries
-    private let defaultHomeTTL: TimeInterval = 300  // 5 minutes
-    private let defaultLibraryTTL: TimeInterval = 600  // 10 minutes
+    // Default TTL: Short caching to match iOS/macOS behavior (always show fresh data)
+    // Cache only helps with rapid repeated requests (e.g., during same session)
+    private let defaultHomeTTL: TimeInterval = 30  // 30 seconds
+    private let defaultLibraryTTL: TimeInterval = 60  // 1 minute
 
     func get<T>(_ key: String) -> T? {
         guard let entry = cache[key] as? CacheEntry<T> else {
