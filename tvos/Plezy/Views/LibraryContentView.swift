@@ -218,22 +218,13 @@ struct LibraryContentView: View {
             return
         }
 
-        let cacheKey = CacheService.libraryContentKey(serverID: serverID, libraryKey: library.key)
-
-        // Check cache first
-        if let cached: [PlexMetadata] = cache.get(cacheKey) {
-            print("📚 [LibraryContent] Using cached content for \(library.title)")
-            self.items = cached
-            applyFilters()
-            isLoading = false
-            return
-        }
-
-        print("📚 [LibraryContent] Loading fresh content for \(library.title)...")
+        print("📚 [LibraryContent] Loading fresh content for \(library.title) (match iOS/macOS)...")
         isLoading = true
         errorMessage = nil
         currentOffset = 0
         hasMoreItems = true
+
+        let cacheKey = CacheService.libraryContentKey(serverID: serverID, libraryKey: library.key)
 
         do {
             let fetchedItems = try await fetchItems(start: 0, size: pageSize)

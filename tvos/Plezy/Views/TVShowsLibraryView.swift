@@ -62,18 +62,10 @@ struct TVShowsLibraryView: View {
             return
         }
 
-        let cacheKey = CacheService.librariesKey(serverID: serverID)
-
-        // Check cache first
-        if let cached: [PlexLibrary] = cache.get(cacheKey) {
-            print("📺 [TVShowsLibraryView] Using cached libraries")
-            self.libraries = cached
-            isLoading = false
-            return
-        }
-
-        print("📺 [TVShowsLibraryView] Loading fresh libraries...")
+        print("📺 [TVShowsLibraryView] Loading fresh libraries (match iOS/macOS)...")
         isLoading = true
+
+        let cacheKey = CacheService.librariesKey(serverID: serverID)
 
         do {
             let fetchedLibraries = try await client.getLibraries()

@@ -336,7 +336,7 @@ struct HomeView: View {
     // MARK: - Content Loading
 
     private func loadContent() async {
-        print("🏠 [HomeView] loadContent called")
+        print("🏠 [HomeView] loadContent called - always fetching fresh data (match iOS/macOS)")
         print("🏠 [HomeView] currentClient exists: \(authService.currentClient != nil)")
 
         guard let client = authService.currentClient,
@@ -347,27 +347,6 @@ struct HomeView: View {
             return
         }
 
-        let cacheKey = CacheService.homeKey(serverID: serverID)
-
-        // Check cache for hubs (Continue Watching is in the hubs data)
-        if let cached: (onDeck: [PlexMetadata], hubs: [PlexHub]) = cache.get(cacheKey) {
-            print("🏠 [HomeView] Using cached hubs...")
-            self.hubs = cached.hubs
-            self.onDeck = cached.onDeck // Keep for cache compatibility
-
-            // Extract recently added from hubs
-            if let recentlyAddedHub = cached.hubs.first(where: { $0.title.lowercased().contains("recently added") || $0.title.lowercased().contains("recent") }),
-               let items = recentlyAddedHub.metadata {
-                self.recentlyAdded = items
-                // Prefetch hero images for smoother transitions
-                prefetchHeroImages()
-            }
-
-            isLoading = false
-            noServerSelected = false
-            return
-        }
-
         print("🏠 [HomeView] Client available, loading fresh content...")
         isLoading = true
         noServerSelected = false
@@ -375,6 +354,8 @@ struct HomeView: View {
 
         // Clear metadata cache to ensure fresh data
         client.clearMetadataCache()
+
+        let cacheKey = CacheService.homeKey(serverID: serverID)
 
         async let onDeckTask = client.getOnDeck()
         async let hubsTask = client.getHubs()
