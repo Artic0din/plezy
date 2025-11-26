@@ -426,7 +426,7 @@ class PlexAPIClient {
 
         // Filter out music content (match iOS/macOS behavior)
         let videoItems = container.items.filter { item in
-            let type = item.type.lowercased()
+            guard let type = item.type?.lowercased() else { return true }
             return type != "artist" && type != "album" && type != "track"
         }
 
