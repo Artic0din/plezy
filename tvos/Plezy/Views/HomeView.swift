@@ -173,10 +173,13 @@ struct HomeView: View {
                         }
                         .frame(height: 720) // Fixed height - Continue Watching position locked
 
-                        // Continue Watching section - exactly 4 cards visible
-                        if !onDeck.isEmpty {
+                        // Up Next / On Deck section - exactly 4 cards visible
+                        // Use the On Deck hub from Plex which includes both continue watching and next episodes
+                        // This matches what Plex shows in its "On Deck" / "Up Next" row
+                        let onDeckHub = hubs.first(where: { $0.title.lowercased().contains("on deck") })
+                        if let odHub = onDeckHub, let items = odHub.metadata, !items.isEmpty {
                             ContinueWatchingRow(
-                                items: onDeck,
+                                items: items,
                                 onPlay: { item in
                                     playingMedia = item
                                 },
@@ -187,7 +190,7 @@ struct HomeView: View {
                         }
 
                         // Other hub rows - exactly 4 cards visible per row
-                        // Only filter out Continue Watching and On Deck (shown separately)
+                        // Filter out Continue Watching and On Deck (shown separately above)
                         // Keep "Recently Added Movies/TV" etc as they are valuable content rows
                         let filteredHubs = hubs.filter {
                             let title = $0.title.lowercased()
@@ -342,10 +345,11 @@ struct HomeView: View {
 
         let cacheKey = CacheService.homeKey(serverID: serverID)
 
-        // Check cache for hubs only (not on-deck, which we always fetch fresh)
+        // Check cache for hubs (Continue Watching is in the hubs data)
         if let cached: (onDeck: [PlexMetadata], hubs: [PlexHub]) = cache.get(cacheKey) {
-            print("🏠 [HomeView] Using cached hubs, fetching fresh on-deck...")
+            print("🏠 [HomeView] Using cached hubs...")
             self.hubs = cached.hubs
+            self.onDeck = cached.onDeck // Keep for cache compatibility
 
             // Extract recently added from hubs
             if let recentlyAddedHub = cached.hubs.first(where: { $0.title.lowercased().contains("recently added") || $0.title.lowercased().contains("recent") }),
@@ -357,22 +361,6 @@ struct HomeView: View {
 
             isLoading = false
             noServerSelected = false
-
-            // Always fetch fresh on-deck data
-            do {
-                // Clear metadata cache to ensure fresh data
-                client.clearMetadataCache()
-
-                let fetchedOnDeck = try await client.getOnDeck()
-                self.onDeck = fetchedOnDeck
-                // Update cache with fresh on-deck
-                cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: cached.hubs))
-                print("🏠 [HomeView] Fresh on-deck loaded: \(fetchedOnDeck.count) items")
-            } catch {
-                print("🔴 [HomeView] Error fetching fresh on-deck: \(error)")
-                // Fall back to cached on-deck
-                self.onDeck = cached.onDeck
-            }
             return
         }
 
@@ -407,7 +395,10 @@ struct HomeView: View {
             // Cache the results
             cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: fetchedHubs))
 
-            print("🏠 [HomeView] Content loaded successfully. OnDeck: \(self.onDeck.count), Hubs: \(self.hubs.count), RecentlyAdded: \(self.recentlyAdded.count)")
+            // Log On Deck hub items
+            let odHub = fetchedHubs.first(where: { $0.title.lowercased().contains("on deck") })
+            let odCount = odHub?.metadata?.count ?? 0
+            print("🏠 [HomeView] Content loaded successfully. On Deck: \(odCount) items from hub, Hubs: \(self.hubs.count), RecentlyAdded: \(self.recentlyAdded.count)")
             errorMessage = nil
         } catch {
             print("🔴 [HomeView] Error loading content: \(error)")
@@ -472,7 +463,8 @@ struct HomeView: View {
         return URL(string: urlString)
     }
 
-    /// Lightweight refresh of just the Continue Watching row after video playback
+    /// Lightweight refresh of the Continue Watching row after video playback
+    /// Continue Watching comes from the hubs data, so we refresh hubs
     private func refreshOnDeck() async {
         guard let client = authService.currentClient,
               let serverID = authService.selectedServer?.clientIdentifier else {
@@ -484,14 +476,22 @@ struct HomeView: View {
             // This is important when content is watched in other Plex clients
             client.clearMetadataCache()
 
+            // Fetch fresh hubs which includes the Continue Watching hub
+            let fetchedHubs = try await client.getHubs()
+            self.hubs = fetchedHubs
+
+            // Also fetch onDeck for cache compatibility
             let fetchedOnDeck = try await client.getOnDeck()
             self.onDeck = fetchedOnDeck
 
-            // Update cache with new onDeck data
+            // Update cache
             let cacheKey = CacheService.homeKey(serverID: serverID)
-            cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: self.hubs))
+            cache.set(cacheKey, value: (onDeck: fetchedOnDeck, hubs: fetchedHubs))
 
-            print("🔄 [HomeView] Continue Watching refreshed: \(fetchedOnDeck.count) items")
+            // Log On Deck hub items
+            let odHub = fetchedHubs.first(where: { $0.title.lowercased().contains("on deck") })
+            let odCount = odHub?.metadata?.count ?? 0
+            print("🔄 [HomeView] Up Next/On Deck refreshed: \(odCount) items from hub")
         } catch {
             print("🔴 [HomeView] Error refreshing Continue Watching: \(error)")
         }
