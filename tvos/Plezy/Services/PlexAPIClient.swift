@@ -665,6 +665,13 @@ class PlexAPIClient {
         print("✅ [API] Removed \(ratingKey) from Continue Watching")
     }
 
+    /// Clear the entire metadata cache
+    /// Use this when you need fresh data from Plex (e.g., refreshing Continue Watching after external changes)
+    func clearMetadataCache() {
+        Self.metadataCache.removeAllObjects()
+        print("🗑️ [API] Cleared metadata cache")
+    }
+
     // MARK: - Chapters
 
     func getChapters(ratingKey: String) async throws -> [PlexChapter] {

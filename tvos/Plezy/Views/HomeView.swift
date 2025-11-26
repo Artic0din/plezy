@@ -360,6 +360,9 @@ struct HomeView: View {
 
             // Always fetch fresh on-deck data
             do {
+                // Clear metadata cache to ensure fresh data
+                client.clearMetadataCache()
+
                 let fetchedOnDeck = try await client.getOnDeck()
                 self.onDeck = fetchedOnDeck
                 // Update cache with fresh on-deck
@@ -377,6 +380,9 @@ struct HomeView: View {
         isLoading = true
         noServerSelected = false
         errorMessage = nil
+
+        // Clear metadata cache to ensure fresh data
+        client.clearMetadataCache()
 
         async let onDeckTask = client.getOnDeck()
         async let hubsTask = client.getHubs()
@@ -474,6 +480,10 @@ struct HomeView: View {
         }
 
         do {
+            // Clear metadata cache to ensure fresh data from Plex
+            // This is important when content is watched in other Plex clients
+            client.clearMetadataCache()
+
             let fetchedOnDeck = try await client.getOnDeck()
             self.onDeck = fetchedOnDeck
 
