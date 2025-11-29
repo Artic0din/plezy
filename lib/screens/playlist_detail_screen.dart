@@ -53,7 +53,7 @@ class _PlaylistDetailScreenState
 
   /// Get the correct PlexClient for this playlist's server
   PlexClient _getClientForPlaylist() {
-    return context.getClientForServer(widget.playlist.serverId);
+    return context.getClientForServer(widget.playlist.serverId!);
   }
 
   Future<void> _deletePlaylist() async {
@@ -238,8 +238,6 @@ class _PlaylistDetailScreenState
       await playbackState.setPlaybackFromPlayQueue(
         playQueue,
         widget.playlist.ratingKey,
-        serverId: widget.playlist.serverId,
-        serverName: widget.playlist.serverName,
       );
 
       // Navigate to selected item (should be first in the queue response)
@@ -338,6 +336,7 @@ class _PlaylistDetailScreenState
                     index: index,
                     onRemove: () => _removeItem(index),
                     onTap: () => _playFromItem(index),
+                    onRefresh: updateItem,
                     canReorder: !widget.playlist.smart,
                   );
                 },

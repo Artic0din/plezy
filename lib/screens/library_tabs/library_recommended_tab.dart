@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/plex_hub.dart';
-import '../../utils/server_tagging_extensions.dart';
 import '../../widgets/hub_section.dart';
+import '../../widgets/hub_navigation_controller.dart';
 import '../../i18n/strings.g.dart';
 import 'base_library_tab.dart';
 
@@ -16,6 +16,20 @@ class LibraryRecommendedTab extends BaseLibraryTab<PlexHub> {
 
 class _LibraryRecommendedTabState
     extends BaseLibraryTabState<PlexHub, LibraryRecommendedTab> {
+  final HubNavigationController _hubNavigationController =
+      HubNavigationController();
+
+  @override
+  void dispose() {
+    _hubNavigationController.dispose();
+    super.dispose();
+  }
+
+  /// Focus the first item in the first hub
+  void focusFirstItem() {
+    _hubNavigationController.focusHub(0, 0);
+  }
+
   @override
   IconData get emptyIcon => Icons.recommend;
 
@@ -30,35 +44,26 @@ class _LibraryRecommendedTabState
     // Use server-specific client for this library
     final client = getClientForLibrary();
 
-    final hubs = await client.getLibraryHubs(widget.library.key, limit: 12);
-
-    // Tag hubs and items with server info
-    return hubs
-        .map(
-          (hub) => PlexHub(
-            hubKey: hub.hubKey,
-            title: hub.title,
-            type: hub.type,
-            hubIdentifier: hub.hubIdentifier,
-            size: hub.size,
-            more: hub.more,
-            items: hub.items.tagWithLibrary(widget.library),
-            serverId: widget.library.serverId,
-            serverName: widget.library.serverName,
-          ),
-        )
-        .toList();
+    // Hubs are now tagged with server info at the source
+    return await client.getLibraryHubs(widget.library.key, limit: 12);
   }
 
   @override
   Widget buildContent(List<PlexHub> items) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final hub = items[index];
-        return HubSection(hub: hub, icon: _getHubIcon(hub));
-      },
+    return HubNavigationScope(
+      controller: _hubNavigationController,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final hub = items[index];
+          return HubSection(
+            hub: hub,
+            icon: _getHubIcon(hub),
+            navigationOrder: index,
+          );
+        },
+      ),
     );
   }
 

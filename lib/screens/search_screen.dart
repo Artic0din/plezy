@@ -1,9 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:rate_limiter/rate_limiter.dart';
 
 import '../i18n/strings.g.dart';
+import 'main_screen.dart';
 import '../mixins/refreshable.dart';
 import '../models/plex_metadata.dart';
 import '../providers/multi_server_provider.dart';
@@ -11,6 +12,7 @@ import '../providers/settings_provider.dart';
 import '../services/settings_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/grid_cross_axis_extent.dart';
+import '../utils/keyboard_utils.dart';
 import '../widgets/desktop_app_bar.dart';
 import '../widgets/media_card.dart';
 
@@ -23,33 +25,41 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> with Refreshable {
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode(debugLabel: 'SearchInput');
   List<PlexMetadata> _searchResults = [];
   bool _isSearching = false;
   bool _hasSearched = false;
-  Timer? _debounceTimer;
+  late final Debounce _searchDebounce;
   String _lastSearchedQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchDebounce = debounce(
+      _performSearch,
+      const Duration(milliseconds: 500),
+    );
     _searchController.addListener(_onSearchChanged);
+    // Focus the search input when the screen is shown
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
+    _searchDebounce.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
   void _onSearchChanged() {
-    // Cancel previous timer
-    _debounceTimer?.cancel();
-
     final query = _searchController.text;
 
     if (query.trim().isEmpty) {
+      _searchDebounce.cancel();
       setState(() {
         _searchResults = [];
         _hasSearched = false;
@@ -64,10 +74,7 @@ class _SearchScreenState extends State<SearchScreen> with Refreshable {
       return;
     }
 
-    // Start new timer
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _performSearch(query);
-    });
+    _searchDebounce([query]);
   }
 
   Future<void> _performSearch(String query) async {
@@ -124,6 +131,13 @@ class _SearchScreenState extends State<SearchScreen> with Refreshable {
     }
   }
 
+  /// Focus the search input field
+  void focusSearchInput() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchFocusNode.requestFocus();
+    });
+  }
+
   // Public method to fully reload all content (for profile switches)
   void fullRefresh() {
     appLogger.d(
@@ -146,133 +160,171 @@ class _SearchScreenState extends State<SearchScreen> with Refreshable {
     }
   }
 
+  /// Handle back key press - focus bottom navigation
+  KeyEventResult _handleBackKey(FocusNode node, KeyEvent event) {
+    if (isBackKeyEvent(event)) {
+      BackNavigationScope.of(context)?.focusBottomNav();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            DesktopSliverAppBar(title: Text(t.screens.search), floating: true),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: SearchBar(
-                  controller: _searchController,
-                  hintText: t.search.hint,
-                  leading: const Icon(Icons.search),
-                  trailing: [
-                    if (_searchController.text.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          // State update handled by listener
-                        },
+        child: Focus(
+          onKeyEvent: _handleBackKey,
+          child: CustomScrollView(
+            slivers: [
+              DesktopSliverAppBar(
+                title: Text(t.screens.search),
+                floating: true,
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    decoration: InputDecoration(
+                      hintText: t.search.hint,
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                // State update handled by listener
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(28),
+                        borderSide: BorderSide.none,
                       ),
-                  ],
-                  autoFocus: false,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            if (_isSearching)
-              const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (!_hasSearched)
-              SliverFillRemaining(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.search, size: 80, color: Colors.grey.shade400),
-                      const SizedBox(height: 16),
-                      Text(
-                        t.search.searchYourMedia,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.grey.shade600,
+              if (_isSearching)
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (!_hasSearched)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search,
+                          size: 80,
+                          color: Colors.grey.shade400,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        t.search.enterTitleActorOrKeyword,
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else if (_searchResults.isEmpty)
-              SliverFillRemaining(
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.search_off,
-                        size: 80,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        t.messages.noResultsFound,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.grey.shade600,
+                        const SizedBox(height: 16),
+                        Text(
+                          t.search.searchYourMedia,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(color: Colors.grey.shade600),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        t.search.tryDifferentTerm,
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Text(
+                          t.search.enterTitleActorOrKeyword,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              )
-            else
-              Consumer<SettingsProvider>(
-                builder: (context, settingsProvider, child) {
-                  if (settingsProvider.viewMode == ViewMode.list) {
-                    return SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final item = _searchResults[index];
-                          return MediaCard(
-                            key: Key(item.ratingKey),
-                            item: item,
-                            onRefresh: updateItem,
-                          );
-                        }, childCount: _searchResults.length),
-                      ),
-                    );
-                  } else {
-                    return SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: SliverGrid(
-                        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: getMaxCrossAxisExtentWithPadding(
+                )
+              else if (_searchResults.isEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 80,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          t.messages.noResultsFound,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          t.search.tryDifferentTerm,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Consumer<SettingsProvider>(
+                  builder: (context, settingsProvider, child) {
+                    if (settingsProvider.viewMode == ViewMode.list) {
+                      return SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate((
                             context,
-                            settingsProvider.libraryDensity,
-                            32,
-                          ),
-                          childAspectRatio: 2 / 3.3,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
+                            index,
+                          ) {
+                            final item = _searchResults[index];
+                            return MediaCard(
+                              key: Key(item.ratingKey),
+                              item: item,
+                              onRefresh: updateItem,
+                            );
+                          }, childCount: _searchResults.length),
                         ),
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final item = _searchResults[index];
-                          return MediaCard(
-                            key: Key(item.ratingKey),
-                            item: item,
-                            onRefresh: updateItem,
-                          );
-                        }, childCount: _searchResults.length),
-                      ),
-                    );
-                  }
-                },
-              ),
-          ],
+                      );
+                    } else {
+                      return SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverGrid(
+                          gridDelegate:
+                              SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent:
+                                    getMaxCrossAxisExtentWithPadding(
+                                      context,
+                                      settingsProvider.libraryDensity,
+                                      32,
+                                    ),
+                                childAspectRatio: 2 / 3.3,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                              ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final item = _searchResults[index];
+                            return MediaCard(
+                              key: Key(item.ratingKey),
+                              item: item,
+                              onRefresh: updateItem,
+                            );
+                          }, childCount: _searchResults.length),
+                        ),
+                      );
+                    }
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );

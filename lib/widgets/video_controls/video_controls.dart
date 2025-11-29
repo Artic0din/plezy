@@ -1,7 +1,8 @@
-import 'dart:async';
+import 'dart:async' show StreamSubscription, Timer;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:rate_limiter/rate_limiter.dart';
 import 'package:flutter/services.dart' show SystemChrome, DeviceOrientation;
 import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:media_kit/media_kit.dart';
@@ -97,7 +98,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
 
   /// Get the correct PlexClient for this metadata's server
   PlexClient _getClientForMetadata() {
-    return context.getClientForServer(widget.metadata.serverId);
+    return context.getClientForServer(widget.metadata.serverId!);
   }
 
   // Double-tap feedback state
@@ -105,24 +106,32 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   double _doubleTapFeedbackOpacity = 0.0;
   bool _lastDoubleTapWasForward = true;
   Timer? _feedbackTimer;
-  // Seek throttle state
-  Timer? _seekThrottleTimer;
-  Duration? _pendingSeekPosition;
+  // Seek throttle
+  late final Throttle _seekThrottle;
   // Current marker state
   PlexMarker? _currentMarker;
   List<PlexMarker> _markers = [];
   bool _markersLoaded = false;
+  // Playback state subscription for auto-hide timer
+  StreamSubscription<bool>? _playingSubscription;
 
   @override
   void initState() {
     super.initState();
     _focusNode = FocusNode();
+    _seekThrottle = throttle(
+      (Duration pos) => widget.player.seek(pos),
+      const Duration(milliseconds: 200),
+      leading: true,
+      trailing: true,
+    );
     _loadChapters();
     _loadMarkers();
     _loadSeekTimes();
     _startHideTimer();
     _initKeyboardService();
     _listenToPosition();
+    _listenToPlayingState();
     // Add lifecycle observer to reload settings when app resumes
     WidgetsBinding.instance.addObserver(this);
     // Add window listener for tracking fullscreen state (for button icon)
@@ -155,6 +164,17 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
             _currentMarker = foundMarker;
           });
         }
+      }
+    });
+  }
+
+  /// Listen to playback state changes to manage auto-hide timer on iOS/mobile
+  void _listenToPlayingState() {
+    _playingSubscription = widget.player.stream.playing.listen((isPlaying) {
+      if (isPlaying && _showControls) {
+        _startHideTimer();
+      } else if (!isPlaying) {
+        _hideTimer?.cancel();
       }
     });
   }
@@ -220,7 +240,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   void dispose() {
     _hideTimer?.cancel();
     _feedbackTimer?.cancel();
-    _seekThrottleTimer?.cancel();
+    _seekThrottle.cancel();
+    _playingSubscription?.cancel();
     _focusNode.dispose();
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
@@ -292,6 +313,13 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
           }
         }
       });
+    }
+  }
+
+  /// Restart the hide timer on user interaction (if video is playing)
+  void _restartHideTimerIfPlaying() {
+    if (widget.player.state.playing) {
+      _startHideTimer();
     }
   }
 
@@ -438,38 +466,13 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     }
   }
 
-  /// Throttled seek for timeline slider - only sends seek events at most every 100ms
-  void _throttledSeek(Duration position) {
-    // Store the pending position
-    _pendingSeekPosition = position;
-
-    // If timer is already active, just update the pending position
-    if (_seekThrottleTimer?.isActive ?? false) {
-      return;
-    }
-
-    // Execute the seek immediately for the first call
-    widget.player.seek(position);
-
-    // Start a timer to throttle subsequent seeks
-    _seekThrottleTimer = Timer(const Duration(milliseconds: 200), () {
-      // If there's a pending position that's different, execute it
-      if (_pendingSeekPosition != null && _pendingSeekPosition != position) {
-        widget.player.seek(_pendingSeekPosition!);
-      }
-      _pendingSeekPosition = null;
-    });
-  }
+  /// Throttled seek for timeline slider - executes immediately then throttles to 200ms
+  void _throttledSeek(Duration position) => _seekThrottle([position]);
 
   /// Finalizes the seek when user stops scrubbing the timeline
   void _finalizeSeek(Duration position) {
-    // Cancel any pending throttled seek
-    _seekThrottleTimer?.cancel();
-    _seekThrottleTimer = null;
-
-    // Execute the final position immediately to ensure accuracy
+    _seekThrottle.cancel();
     widget.player.seek(position);
-    _pendingSeekPosition = null;
   }
 
   /// Handle double-tap skip forward or backward
@@ -581,6 +584,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
           _nextSubtitleTrack,
           _nextChapter,
           _previousChapter,
+          onBack: () => Navigator.of(context).pop(true),
         );
       },
       child: MouseRegion(
@@ -635,40 +639,50 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                         ),
                       ),
                       child: isMobile
-                          ? MobileVideoControls(
-                              player: widget.player,
-                              metadata: widget.metadata,
-                              chapters: _chapters,
-                              chaptersLoaded: _chaptersLoaded,
-                              seekTimeSmall: _seekTimeSmall,
-                              trackChapterControls:
-                                  _buildTrackChapterControlsWidget(),
-                              onSeek: _throttledSeek,
-                              onSeekEnd: _finalizeSeek,
-                              onPlayPause:
-                                  () {}, // Not used, handled internally
-                              onCancelAutoHide: () => _hideTimer?.cancel(),
-                              onStartAutoHide: _startHideTimer,
-                            )
-                          : DesktopVideoControls(
-                              player: widget.player,
-                              metadata: widget.metadata,
-                              onNext: widget.onNext,
-                              onPrevious: widget.onPrevious,
-                              chapters: _chapters,
-                              chaptersLoaded: _chaptersLoaded,
-                              seekTimeSmall: _seekTimeSmall,
-                              volumeControl: VolumeControl(
+                          ? Listener(
+                              behavior: HitTestBehavior.translucent,
+                              onPointerDown: (_) =>
+                                  _restartHideTimerIfPlaying(),
+                              child: MobileVideoControls(
                                 player: widget.player,
+                                metadata: widget.metadata,
+                                chapters: _chapters,
+                                chaptersLoaded: _chaptersLoaded,
+                                seekTimeSmall: _seekTimeSmall,
+                                trackChapterControls:
+                                    _buildTrackChapterControlsWidget(),
+                                onSeek: _throttledSeek,
+                                onSeekEnd: _finalizeSeek,
+                                onPlayPause:
+                                    () {}, // Not used, handled internally
+                                onCancelAutoHide: () => _hideTimer?.cancel(),
+                                onStartAutoHide: _startHideTimer,
                               ),
-                              trackChapterControls:
-                                  _buildTrackChapterControlsWidget(),
-                              onSeekToPreviousChapter: _seekToPreviousChapter,
-                              onSeekToNextChapter: _seekToNextChapter,
-                              onSeek: _throttledSeek,
-                              onSeekEnd: _finalizeSeek,
-                              getReplayIcon: getReplayIcon,
-                              getForwardIcon: getForwardIcon,
+                            )
+                          : Listener(
+                              behavior: HitTestBehavior.translucent,
+                              onPointerDown: (_) =>
+                                  _restartHideTimerIfPlaying(),
+                              child: DesktopVideoControls(
+                                player: widget.player,
+                                metadata: widget.metadata,
+                                onNext: widget.onNext,
+                                onPrevious: widget.onPrevious,
+                                chapters: _chapters,
+                                chaptersLoaded: _chaptersLoaded,
+                                seekTimeSmall: _seekTimeSmall,
+                                volumeControl: VolumeControl(
+                                  player: widget.player,
+                                ),
+                                trackChapterControls:
+                                    _buildTrackChapterControlsWidget(),
+                                onSeekToPreviousChapter: _seekToPreviousChapter,
+                                onSeekToNextChapter: _seekToNextChapter,
+                                onSeek: _throttledSeek,
+                                onSeekEnd: _finalizeSeek,
+                                getReplayIcon: getReplayIcon,
+                                getForwardIcon: getForwardIcon,
+                              ),
                             ),
                     ),
                   ),

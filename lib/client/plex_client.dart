@@ -32,6 +32,12 @@ class PlexClient {
   final EndpointFailoverManager? _endpointManager;
   final Future<void> Function(String newBaseUrl)? _onEndpointChanged;
 
+  /// Server identifier - all PlexMetadata items created by this client are tagged with this
+  final String serverId;
+
+  /// Server name - all PlexMetadata items created by this client are tagged with this
+  final String? serverName;
+
   /// Custom response decoder that handles malformed UTF-8 gracefully
   static String _lenientUtf8Decoder(
     List<int> responseBytes,
@@ -43,6 +49,8 @@ class PlexClient {
 
   PlexClient(
     this.config, {
+    required this.serverId,
+    this.serverName,
     List<String>? prioritizedEndpoints,
     Future<void> Function(String newBaseUrl)? onEndpointChanged,
   }) : _endpointManager =
@@ -215,11 +223,16 @@ class PlexClient {
   }
 
   /// Extract list of PlexMetadata from response
+  /// Automatically tags all items with this client's serverId and serverName
   List<PlexMetadata> _extractMetadataList(Response response) {
     final container = _getMediaContainer(response);
     if (container != null && container['Metadata'] != null) {
       return (container['Metadata'] as List)
-          .map((json) => PlexMetadata.fromJson(json))
+          .map(
+            (json) => PlexMetadata.fromJson(
+              json,
+            ).copyWith(serverId: serverId, serverName: serverName),
+          )
           .toList();
     }
     return [];
@@ -237,9 +250,14 @@ class PlexClient {
   }
 
   /// Extract single PlexMetadata from response (returns first item or null)
+  /// Automatically tags the item with this client's serverId and serverName
   PlexMetadata? _extractSingleMetadata(Response response) {
     final metadataJson = _getFirstMetadataJson(response);
-    return metadataJson != null ? PlexMetadata.fromJson(metadataJson) : null;
+    return metadataJson != null
+        ? PlexMetadata.fromJson(
+            metadataJson,
+          ).copyWith(serverId: serverId, serverName: serverName)
+        : null;
   }
 
   /// Generic helper to extract and map Directory list from response
@@ -256,6 +274,36 @@ class PlexClient {
     return [];
   }
 
+  /// Extract PlexLibrary list from response with auto-tagging
+  List<PlexLibrary> _extractLibraryList(Response response) {
+    final container = _getMediaContainer(response);
+    if (container != null && container['Directory'] != null) {
+      return (container['Directory'] as List)
+          .map(
+            (json) => PlexLibrary.fromJson(
+              json as Map<String, dynamic>,
+            ).copyWith(serverId: serverId, serverName: serverName),
+          )
+          .toList();
+    }
+    return [];
+  }
+
+  /// Extract PlexPlaylist list from response with auto-tagging
+  List<PlexPlaylist> _extractPlaylistList(Response response) {
+    final container = _getMediaContainer(response);
+    if (container != null && container['Metadata'] != null) {
+      return (container['Metadata'] as List)
+          .map(
+            (json) => PlexPlaylist.fromJson(
+              json as Map<String, dynamic>,
+            ).copyWith(serverId: serverId, serverName: serverName),
+          )
+          .toList();
+    }
+    return [];
+  }
+
   // ============================================================================
   // API Methods
   // ============================================================================
@@ -267,9 +315,10 @@ class PlexClient {
   }
 
   /// Get library sections
+  /// Returns libraries automatically tagged with this client's serverId and serverName
   Future<List<PlexLibrary>> getLibraries() async {
     final response = await _dio.get('/library/sections');
-    return _extractDirectoryList(response, PlexLibrary.fromJson);
+    return _extractLibraryList(response);
   }
 
   /// Get library content by section ID
@@ -344,7 +393,9 @@ class PlexClient {
 
     // Log the parsed metadata JSON
     if (metadataJson != null) {
-      metadata = PlexMetadata.fromJsonWithImages(metadataJson);
+      metadata = PlexMetadata.fromJsonWithImages(
+        metadataJson,
+      ).copyWith(serverId: serverId, serverName: serverName);
 
       // Check if OnDeck is nested inside Metadata
       if (metadataJson.containsKey('OnDeck') &&
@@ -355,7 +406,9 @@ class PlexClient {
         if (onDeckData is Map && onDeckData.containsKey('Metadata')) {
           final onDeckMetadata = onDeckData['Metadata'];
           if (onDeckMetadata != null) {
-            onDeckEpisode = PlexMetadata.fromJson(onDeckMetadata);
+            onDeckEpisode = PlexMetadata.fromJson(
+              onDeckMetadata,
+            ).copyWith(serverId: serverId, serverName: serverName);
           }
         }
       }
@@ -369,7 +422,9 @@ class PlexClient {
     final response = await _dio.get('/library/metadata/$ratingKey');
     final metadataJson = _getFirstMetadataJson(response);
     return metadataJson != null
-        ? PlexMetadata.fromJsonWithImages(metadataJson)
+        ? PlexMetadata.fromJsonWithImages(
+            metadataJson,
+          ).copyWith(serverId: serverId, serverName: serverName)
         : null;
   }
 
@@ -407,6 +462,46 @@ class PlexClient {
     }
   }
 
+  /// Select specific audio and subtitle streams for playback
+  /// This updates which streams are "selected" in the media metadata
+  /// Uses the part ID from media info for accurate stream selection
+  Future<bool> selectStreams(
+    int partId, {
+    int? audioStreamID,
+    int? subtitleStreamID,
+    bool allParts = true,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (audioStreamID != null) {
+        queryParams['audioStreamID'] = audioStreamID;
+      }
+      if (subtitleStreamID != null) {
+        queryParams['subtitleStreamID'] = subtitleStreamID;
+      }
+      if (allParts) {
+        // If no streams to select, return early
+        if (queryParams.isEmpty) {
+          return true;
+        }
+
+        // Use PUT request on /library/parts/{partId}
+        final response = await _dio.put(
+          '/library/parts/$partId',
+          queryParameters: queryParams,
+        );
+
+        return response.statusCode == 200;
+      }
+      // Si allParts est false, retourner true ou false explicitement (selon la logique souhaitée)
+      // Ici, on retourne true par défaut si rien n'est fait
+      return true;
+    } catch (e) {
+      appLogger.e('Failed to select streams', error: e);
+      return false;
+    }
+  }
+
   /// Search across all libraries using the hub search endpoint
   /// Only returns movies and shows, filtering out seasons and episodes
   Future<List<PlexMetadata>> search(String query, {int limit = 10}) async {
@@ -437,7 +532,11 @@ class PlexClient {
           if (hub['Metadata'] != null) {
             for (final json in hub['Metadata'] as List) {
               try {
-                results.add(PlexMetadata.fromJson(json));
+                results.add(
+                  PlexMetadata.fromJson(
+                    json,
+                  ).copyWith(serverId: serverId, serverName: serverName),
+                );
               } catch (e) {
                 // Skip items that fail to parse
                 appLogger.w('Failed to parse search result', error: e);
@@ -448,7 +547,11 @@ class PlexClient {
           if (hub['Directory'] != null) {
             for (final json in hub['Directory'] as List) {
               try {
-                results.add(PlexMetadata.fromJson(json));
+                results.add(
+                  PlexMetadata.fromJson(
+                    json,
+                  ).copyWith(serverId: serverId, serverName: serverName),
+                );
               } catch (e) {
                 // Skip items that fail to parse
                 appLogger.w('Failed to parse search result', error: e);
@@ -484,7 +587,11 @@ class PlexClient {
     final container = _getMediaContainer(response);
     if (container != null && container['Metadata'] != null) {
       final allItems = (container['Metadata'] as List)
-          .map((json) => PlexMetadata.fromJsonWithImages(json))
+          .map(
+            (json) => PlexMetadata.fromJsonWithImages(
+              json,
+            ).copyWith(serverId: serverId, serverName: serverName),
+          )
           .toList();
 
       // Filter out music content (artists, albums, tracks)
@@ -856,6 +963,7 @@ class PlexClient {
             audioTracks: audioTracks,
             subtitleTracks: subtitleTracks,
             chapters: chapters,
+            partId: part['id'] as int?,
           );
         }
       }
@@ -1122,11 +1230,19 @@ class PlexClient {
             final hub = PlexHub.fromJson(hubJson);
             // Only include hubs that have items and are movie/show content
             if (hub.items.isNotEmpty) {
-              // Filter out non-video content types
-              final videoItems = hub.items.where((item) {
-                final type = item.type.toLowerCase();
-                return type == 'movie' || type == 'show';
-              }).toList();
+              // Filter out non-video content types and tag with server info
+              final videoItems = hub.items
+                  .where((item) {
+                    final type = item.type.toLowerCase();
+                    return type == 'movie' || type == 'show';
+                  })
+                  .map(
+                    (item) => item.copyWith(
+                      serverId: serverId,
+                      serverName: serverName,
+                    ),
+                  )
+                  .toList();
 
               if (videoItems.isNotEmpty) {
                 hubs.add(
@@ -1138,6 +1254,8 @@ class PlexClient {
                     size: hub.size,
                     more: hub.more,
                     items: videoItems,
+                    serverId: serverId,
+                    serverName: serverName,
                   ),
                 );
               }
@@ -1201,21 +1319,8 @@ class PlexClient {
         '/playlists',
         queryParameters: queryParams,
       );
-      final container = _getMediaContainer(response);
 
-      if (container == null || container['Metadata'] == null) {
-        return [];
-      }
-
-      final List<dynamic> metadata = container['Metadata'] as List;
-
-      if (metadata.isEmpty) {
-        return [];
-      }
-
-      return metadata
-          .map((item) => PlexPlaylist.fromJson(item as Map<String, dynamic>))
-          .toList();
+      return _extractPlaylistList(response);
     } catch (e) {
       appLogger.e('Failed to get playlists: $e');
       return [];
@@ -1588,7 +1693,11 @@ class PlexClient {
         queryParameters: queryParams,
       );
 
-      return PlayQueueResponse.fromJson(response.data);
+      return PlayQueueResponse.fromJson(
+        response.data,
+        serverId: serverId,
+        serverName: serverName,
+      );
     } catch (e) {
       appLogger.e('Failed to create play queue', error: e);
       return null;
@@ -1620,7 +1729,11 @@ class PlexClient {
         queryParameters: queryParams,
       );
 
-      return PlayQueueResponse.fromJson(response.data);
+      return PlayQueueResponse.fromJson(
+        response.data,
+        serverId: serverId,
+        serverName: serverName,
+      );
     } catch (e) {
       appLogger.e('Failed to get play queue: $e');
       return null;
@@ -1695,6 +1808,7 @@ class PlexClient {
 
   /// Extract both Metadata and Directory entries from response
   /// Folders can come back as either type
+  /// Automatically tags all items with this client's serverId and serverName
   List<PlexMetadata> _extractMetadataAndDirectories(Response response) {
     final List<PlexMetadata> items = [];
     final container = _getMediaContainer(response);
@@ -1705,7 +1819,11 @@ class PlexClient {
         for (final json in container['Metadata'] as List) {
           try {
             // Try to parse with full PlexMetadata.fromJson first
-            items.add(PlexMetadata.fromJson(json));
+            items.add(
+              PlexMetadata.fromJson(
+                json,
+              ).copyWith(serverId: serverId, serverName: serverName),
+            );
           } catch (e) {
             // If full parsing fails, use minimal safe parsing
             appLogger.d('Using minimal parsing for metadata item: $e');
@@ -1719,6 +1837,8 @@ class PlexClient {
                   thumb: json['thumb'],
                   art: json['art'],
                   year: json['year'],
+                  serverId: serverId,
+                  serverName: serverName,
                 ),
               );
             } catch (e2) {
@@ -1733,7 +1853,11 @@ class PlexClient {
         for (final json in container['Directory'] as List) {
           try {
             // Try to parse as PlexMetadata first
-            items.add(PlexMetadata.fromJson(json));
+            items.add(
+              PlexMetadata.fromJson(
+                json,
+              ).copyWith(serverId: serverId, serverName: serverName),
+            );
           } catch (e) {
             // If that fails, use minimal folder representation
             try {
@@ -1745,6 +1869,8 @@ class PlexClient {
                   title: json['title'] ?? 'Untitled',
                   thumb: json['thumb'],
                   art: json['art'],
+                  serverId: serverId,
+                  serverName: serverName,
                 ),
               );
             } catch (e2) {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/plex_metadata.dart';
 import '../../utils/library_refresh_notifier.dart';
-import '../../utils/server_tagging_extensions.dart';
 import '../../i18n/strings.g.dart';
 import '../../widgets/adaptive_media_grid.dart';
 import 'base_library_tab.dart';
@@ -22,6 +21,17 @@ class LibraryCollectionsTab extends BaseLibraryTab<PlexMetadata> {
 
 class _LibraryCollectionsTabState
     extends BaseLibraryTabState<PlexMetadata, LibraryCollectionsTab> {
+  /// Focus node for the first item in the grid
+  final FocusNode _firstItemFocusNode = FocusNode(
+    debugLabel: 'CollectionsFirstItem',
+  );
+
+  @override
+  void dispose() {
+    _firstItemFocusNode.dispose();
+    super.dispose();
+  }
+
   @override
   IconData get emptyIcon => Icons.collections;
 
@@ -40,14 +50,23 @@ class _LibraryCollectionsTabState
     // Use server-specific client for this library
     final client = getClientForLibrary();
 
-    final collections = await client.getLibraryCollections(widget.library.key);
+    // Collections are automatically tagged with server info by PlexClient
+    return await client.getLibraryCollections(widget.library.key);
+  }
 
-    // Tag collections with server info
-    return collections.tagWithLibrary(widget.library);
+  @override
+  void focusFirstItem() {
+    if (items.isNotEmpty) {
+      _firstItemFocusNode.requestFocus();
+    }
   }
 
   @override
   Widget buildContent(List<PlexMetadata> items) {
-    return AdaptiveMediaGrid(items: items, onRefresh: loadItems);
+    return AdaptiveMediaGrid(
+      items: items,
+      onRefresh: loadItems,
+      firstItemFocusNode: _firstItemFocusNode,
+    );
   }
 }

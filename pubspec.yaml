@@ -1,7 +1,7 @@
 name: plezy
 description: "A beautiful Plex client for Flutter"
 publish_to: "none"
-version: 1.7.3+19
+version: 1.8.1+21
 
 environment:
   sdk: ^3.8.1
@@ -34,37 +34,38 @@ dependencies:
     git:
       url: https://github.com/edde746/os-media-controls
       ref: 75dc5642cd148c54c03fe96976702b8d31c48599
+  rate_limiter: ^1.0.0
 
 dependency_overrides:
   media_kit:
     git:
       url: https://github.com/edde746/media-kit
-      ref: 3baceead40d18fd5528eaab0b4cfee4decfb4da2
+      ref: dce2963936424ffc80309ef4bca7e95041dfbfef
       path: media_kit
   media_kit_video:
     git:
       url: https://github.com/edde746/media-kit
-      ref: 3baceead40d18fd5528eaab0b4cfee4decfb4da2
+      ref: dce2963936424ffc80309ef4bca7e95041dfbfef
       path: media_kit_video
   media_kit_libs_video:
     git:
       url: https://github.com/edde746/media-kit
-      ref: 3baceead40d18fd5528eaab0b4cfee4decfb4da2
+      ref: dce2963936424ffc80309ef4bca7e95041dfbfef
       path: libs/universal/media_kit_libs_video
   media_kit_libs_macos_video:
     git:
       url: https://github.com/edde746/media-kit
-      ref: 3baceead40d18fd5528eaab0b4cfee4decfb4da2
+      ref: dce2963936424ffc80309ef4bca7e95041dfbfef
       path: libs/macos/media_kit_libs_macos_video
   media_kit_libs_ios_video:
     git:
       url: https://github.com/edde746/media-kit
-      ref: 3baceead40d18fd5528eaab0b4cfee4decfb4da2
+      ref: dce2963936424ffc80309ef4bca7e95041dfbfef
       path: libs/ios/media_kit_libs_ios_video
   media_kit_libs_android_video:
     git:
       url: https://github.com/edde746/media-kit
-      ref: 3baceead40d18fd5528eaab0b4cfee4decfb4da2
+      ref: dce2963936424ffc80309ef4bca7e95041dfbfef
       path: libs/android/media_kit_libs_android_video
 
 dev_dependencies:
@@ -82,7 +83,7 @@ flutter:
   assets:
     - lib/data/iso_639_codes.json
     - assets/plezy.png
-    - assets/droid-sans.ttf
+    - assets/go-noto-current-regular.ttf
 
 flutter_launcher_icons:
   android: true
