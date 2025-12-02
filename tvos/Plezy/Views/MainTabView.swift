@@ -52,17 +52,22 @@ struct MainTabView: View {
         switch tabCoordinator.selectedTab {
         case .home:
             HomeView()
+                .id(TabSelection.home)
                 .onAppear {
                     print("📱 [MainTabView] Home view appeared")
                 }
         case .movies:
             MoviesLibraryView()
+                .id(TabSelection.movies)
         case .tvShows:
             TVShowsLibraryView()
+                .id(TabSelection.tvShows)
         case .search:
             SearchView()
+                .id(TabSelection.search)
         case .settings:
             SettingsView()
+                .id(TabSelection.settings)
         }
     }
 }

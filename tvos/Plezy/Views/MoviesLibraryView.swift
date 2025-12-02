@@ -50,14 +50,31 @@ struct MoviesLibraryView: View {
                     .environmentObject(authService)
             }
         }
+        .onAppear {
+            print("🎬 [MoviesLibraryView] View appeared, isLoading: \(isLoading)")
+            if libraries.isEmpty && !isLoading {
+                Task {
+                    await loadLibraries()
+                }
+            }
+        }
         .task {
             await loadLibraries()
         }
     }
 
     private func loadLibraries() async {
-        guard let client = authService.currentClient,
-              let serverID = authService.selectedServer?.clientIdentifier else {
+        print("🎬 [MoviesLibraryView] loadLibraries() called")
+
+        guard let client = authService.currentClient else {
+            print("⚠️ [MoviesLibraryView] No current client available")
+            isLoading = false
+            return
+        }
+
+        guard let serverID = authService.selectedServer?.clientIdentifier else {
+            print("⚠️ [MoviesLibraryView] No server ID available")
+            isLoading = false
             return
         }
 
@@ -65,7 +82,7 @@ struct MoviesLibraryView: View {
 
         // Check cache first
         if let cached: [PlexLibrary] = cache.get(cacheKey) {
-            print("🎬 [MoviesLibraryView] Using cached libraries")
+            print("🎬 [MoviesLibraryView] Using cached libraries (\(cached.count) total)")
             self.libraries = cached
             isLoading = false
             return
@@ -83,10 +100,11 @@ struct MoviesLibraryView: View {
 
             print("🎬 [MoviesLibraryView] Libraries loaded: \(fetchedLibraries.count)")
         } catch {
-            print("Error loading libraries: \(error)")
+            print("❌ [MoviesLibraryView] Error loading libraries: \(error)")
         }
 
         isLoading = false
+        print("🎬 [MoviesLibraryView] loadLibraries() completed, isLoading: false")
     }
 }
 
