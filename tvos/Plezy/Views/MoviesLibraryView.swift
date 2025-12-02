@@ -58,6 +58,15 @@ struct MoviesLibraryView: View {
                 }
             }
         }
+        .onChange(of: authService.currentClient) { oldValue, newValue in
+            // Reload when client becomes available or changes
+            if newValue != nil && libraries.isEmpty {
+                print("🎬 [MoviesLibraryView] Client became available, loading libraries...")
+                Task {
+                    await loadLibraries()
+                }
+            }
+        }
         .task {
             await loadLibraries()
         }

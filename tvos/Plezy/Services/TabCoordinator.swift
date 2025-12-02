@@ -56,14 +56,10 @@ class TabCoordinator: ObservableObject {
     static let shared = TabCoordinator()
 
     private init() {
-        // Restore last selected tab from storage
-        if let data = UserDefaults.standard.data(forKey: Self.tabStorageKey),
-           let savedTab = try? JSONDecoder().decode(TabSelection.self, from: data) {
-            self.selectedTab = savedTab
-            print("🔵 [TabCoordinator] Initialized with restored tab: \(savedTab.rawValue)")
-        } else {
-            print("🔵 [TabCoordinator] Initialized with default tab: Home")
-        }
+        // Always start on Home tab for better initial experience
+        // (Restoring last tab can cause issues if views load before auth completes)
+        self.selectedTab = .home
+        print("🔵 [TabCoordinator] Initialized with default tab: Home")
     }
 
     /// Switch to a specific tab
