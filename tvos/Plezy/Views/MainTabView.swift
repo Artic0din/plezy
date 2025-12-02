@@ -42,18 +42,6 @@ struct MainTabView: View {
                 }
             }
         }
-        // Open sidebar by scrolling up past the top edge
-        .gesture(
-            DragGesture()
-                .onEnded { value in
-                    // Swipe from left edge to open
-                    if value.startLocation.x < 100 && value.translation.width > 200 && !isSidebarPresented {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            isSidebarPresented = true
-                        }
-                    }
-                }
-        )
         .onAppear {
             print("📱 [MainTabView] MainTabView appeared with sidebar navigation")
         }
