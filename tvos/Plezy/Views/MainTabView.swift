@@ -14,56 +14,46 @@ struct MainTabView: View {
     @State private var isSidebarPresented = false
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .leading) {
             // Main content area
             contentView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
-                .blur(radius: isSidebarPresented ? 10 : 0)
-                .scaleEffect(isSidebarPresented ? 0.95 : 1.0)
-                .animation(.easeOut(duration: 0.3), value: isSidebarPresented)
-
-            // Menu button (top-left corner)
-            if !isSidebarPresented {
-                MenuButton(action: {
-                    withAnimation {
-                        isSidebarPresented = true
-                    }
-                })
-                .padding(.top, 60)
-                .padding(.leading, 60)
-                .zIndex(2)
-            }
+                .opacity(isSidebarPresented ? 0.4 : 1.0)
+                .animation(.easeOut(duration: 0.25), value: isSidebarPresented)
+                .disabled(isSidebarPresented)
 
             // Sidebar overlay
             if isSidebarPresented {
-                Color.black.opacity(0.3)
-                    .edgesIgnoringSafeArea(.all)
-                    .onTapGesture {
-                        withAnimation {
-                            isSidebarPresented = false
-                        }
-                    }
-
                 SidebarView(isPresented: $isSidebarPresented)
                     .transition(.move(edge: .leading))
-                    .zIndex(3)
-            }
-        }
-        .onPlayPauseCommand {
-            // Toggle sidebar with play/pause button when not playing content
-            withAnimation {
-                isSidebarPresented.toggle()
+                    .zIndex(10)
             }
         }
         .onMoveCommand { direction in
-            // Open sidebar when swiping left from content area
+            // Open sidebar when swiping left, close when swiping right
             if direction == .left && !isSidebarPresented {
-                withAnimation {
+                withAnimation(.easeOut(duration: 0.25)) {
                     isSidebarPresented = true
+                }
+            } else if direction == .right && isSidebarPresented {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    isSidebarPresented = false
                 }
             }
         }
+        // Open sidebar by scrolling up past the top edge
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    // Swipe from left edge to open
+                    if value.startLocation.x < 100 && value.translation.width > 200 && !isSidebarPresented {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            isSidebarPresented = true
+                        }
+                    }
+                }
+        )
         .onAppear {
             print("📱 [MainTabView] MainTabView appeared with sidebar navigation")
         }
@@ -86,36 +76,6 @@ struct MainTabView: View {
         case .settings:
             SettingsView()
         }
-    }
-}
-
-// MARK: - Menu Button Component
-struct MenuButton: View {
-    let action: () -> Void
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 24, weight: .medium))
-
-                Text("Menu")
-                    .font(.system(size: 28, weight: .medium))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(isFocused ? 0.2 : 0.1))
-            )
-            .scaleEffect(isFocused ? 1.08 : 1.0)
-            .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
-        }
-        .buttonStyle(PlainButtonStyle())
-        .focused($isFocused)
-        .animation(.easeOut(duration: 0.2), value: isFocused)
     }
 }
 

@@ -10,78 +10,71 @@ import SwiftUI
 struct SidebarView: View {
     @EnvironmentObject var tabCoordinator: TabCoordinator
     @Binding var isPresented: Bool
-    @Namespace private var namespace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header spacing
+            // Top spacing
             Spacer()
-                .frame(height: 80)
+                .frame(height: 100)
 
             // Navigation items
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 SidebarMenuItem(
                     title: TabSelection.search.rawValue,
-                    icon: TabSelection.search.systemImage,
-                    isSelected: tabCoordinator.selectedTab == .search,
-                    namespace: namespace
+                    isSelected: tabCoordinator.selectedTab == .search
                 ) {
                     selectTab(.search)
                 }
 
                 SidebarMenuItem(
                     title: TabSelection.home.rawValue,
-                    icon: TabSelection.home.systemImage,
-                    isSelected: tabCoordinator.selectedTab == .home,
-                    namespace: namespace
+                    isSelected: tabCoordinator.selectedTab == .home
                 ) {
                     selectTab(.home)
                 }
 
                 SidebarMenuItem(
                     title: TabSelection.movies.rawValue,
-                    icon: TabSelection.movies.systemImage,
-                    isSelected: tabCoordinator.selectedTab == .movies,
-                    namespace: namespace
+                    isSelected: tabCoordinator.selectedTab == .movies
                 ) {
                     selectTab(.movies)
                 }
 
                 SidebarMenuItem(
                     title: TabSelection.tvShows.rawValue,
-                    icon: TabSelection.tvShows.systemImage,
-                    isSelected: tabCoordinator.selectedTab == .tvShows,
-                    namespace: namespace
+                    isSelected: tabCoordinator.selectedTab == .tvShows
                 ) {
                     selectTab(.tvShows)
                 }
 
-                Divider()
-                    .background(Color.white.opacity(0.2))
-                    .padding(.vertical, 20)
+                // Spacer between sections
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 40)
 
                 SidebarMenuItem(
                     title: TabSelection.settings.rawValue,
-                    icon: TabSelection.settings.systemImage,
-                    isSelected: tabCoordinator.selectedTab == .settings,
-                    namespace: namespace
+                    isSelected: tabCoordinator.selectedTab == .settings
                 ) {
                     selectTab(.settings)
                 }
             }
-            .padding(.leading, 60)
+            .padding(.leading, 90)
+            .padding(.trailing, 60)
 
             Spacer()
         }
-        .frame(width: 400)
-        .background(Color.black.opacity(0.85))
-        .edgesIgnoringSafeArea(.all)
+        .frame(width: 480)
+        .background(
+            Color(white: 0.11, opacity: 0.95)
+                .edgesIgnoringSafeArea(.all)
+        )
     }
 
     private func selectTab(_ tab: TabSelection) {
         tabCoordinator.select(tab)
         // Dismiss sidebar after selection
-        withAnimation(.easeOut(duration: 0.3)) {
+        withAnimation(.easeOut(duration: 0.25)) {
             isPresented = false
         }
     }
@@ -89,44 +82,28 @@ struct SidebarView: View {
 
 struct SidebarMenuItem: View {
     let title: String
-    let icon: String
     let isSelected: Bool
-    let namespace: Namespace.ID
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 20) {
-                Image(systemName: icon)
-                    .font(.system(size: 28, weight: .medium))
-                    .frame(width: 40)
-
-                Text(title)
-                    .font(.system(size: 32, weight: isSelected ? .semibold : .regular))
-
-                Spacer()
-            }
-            .foregroundColor(isSelected ? .white : .white.opacity(0.7))
-            .padding(.horizontal, 30)
-            .padding(.vertical, 20)
-            .background(
-                Group {
-                    if isFocused {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.15))
-                    } else if isSelected {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.08))
-                    }
-                }
-            )
+            Text(title)
+                .font(.system(size: 38, weight: isSelected ? .medium : .regular))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 14)
+                .padding(.horizontal, 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isFocused ? Color(white: 0.25) : Color.clear)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
         .focused($isFocused)
-        .scaleEffect(isFocused ? 1.05 : 1.0)
-        .animation(.easeOut(duration: 0.2), value: isFocused)
+        .animation(.easeOut(duration: 0.15), value: isFocused)
     }
 }
 
