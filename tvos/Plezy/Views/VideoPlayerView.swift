@@ -920,25 +920,34 @@ class VideoPlayerManager: ObservableObject {
             // Title - displayed as main title in transport bar
             // For episodes: show the series name
             // For movies: show the movie title
+            let titleValue: String
+            if media.type == "episode", let showTitle = media.grandparentTitle {
+                titleValue = showTitle
+            } else {
+                titleValue = media.title
+            }
+
+            // Add as common identifier
             let titleItem = AVMutableMetadataItem()
             titleItem.identifier = .commonIdentifierTitle
-            if media.type == "episode", let showTitle = media.grandparentTitle {
-                titleItem.value = showTitle as NSString
-            } else {
-                titleItem.value = media.title as NSString
-            }
+            titleItem.value = titleValue as NSString
             externalMetadata.append(titleItem)
+
+            // Also add as QuickTime title for better tvOS compatibility
+            let qtTitleItem = AVMutableMetadataItem()
+            qtTitleItem.identifier = .quickTimeMetadataTitle
+            qtTitleItem.value = titleValue as NSString
+            externalMetadata.append(qtTitleItem)
 
             // Subtitle / Info line - displayed below title in transport bar
             // For TV episodes: "S1:E1 • Episode Name"
             // For movies: year and content rating
-            let subtitleItem = AVMutableMetadataItem()
-            subtitleItem.identifier = .iTunesMetadataTrackSubTitle
+            let subtitleValue: String
             if media.type == "episode" {
                 if let season = media.parentIndex, let episode = media.index {
-                    subtitleItem.value = "S\(season):E\(episode) • \(media.title)" as NSString
+                    subtitleValue = "S\(season):E\(episode) • \(media.title)"
                 } else {
-                    subtitleItem.value = media.title as NSString
+                    subtitleValue = media.title
                 }
             } else {
                 // For movies, show year and rating as subtitle
@@ -955,9 +964,20 @@ class VideoPlayerManager: ObservableObject {
                     let durationStr = hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
                     movieSubtitle += movieSubtitle.isEmpty ? durationStr : " • \(durationStr)"
                 }
-                subtitleItem.value = movieSubtitle as NSString
+                subtitleValue = movieSubtitle
             }
+
+            // Add subtitle as iTunes track subtitle
+            let subtitleItem = AVMutableMetadataItem()
+            subtitleItem.identifier = .iTunesMetadataTrackSubTitle
+            subtitleItem.value = subtitleValue as NSString
             externalMetadata.append(subtitleItem)
+
+            // Also add as QuickTime description for better visibility
+            let qtDescItem = AVMutableMetadataItem()
+            qtDescItem.identifier = .quickTimeMetadataDescription
+            qtDescItem.value = subtitleValue as NSString
+            externalMetadata.append(qtDescItem)
 
             // Also set as "album artist" which some tvOS versions use for subtitle display
             let artistItem = AVMutableMetadataItem()
@@ -1029,8 +1049,6 @@ class VideoPlayerManager: ObservableObject {
             // Set external metadata on player item for transport bar and Info panel
             if let playerItem = self.playerItem {
                 playerItem.externalMetadata = externalMetadata
-                let titleValue = titleItem.value as? String ?? "nil"
-                let subtitleValue = subtitleItem.value as? String ?? "nil"
                 print("🎬 [Player] Set external metadata: title='\(titleValue)', subtitle='\(subtitleValue)'")
             }
         }
