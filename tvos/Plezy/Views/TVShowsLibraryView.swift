@@ -59,10 +59,10 @@ struct TVShowsLibraryView: View {
                 }
             }
         }
-        .onChange(of: authService.currentClient) { oldValue, newValue in
-            // Reload when client becomes available or changes
+        .onChange(of: authService.selectedServer?.clientIdentifier) { oldValue, newValue in
+            // Reload when server becomes available or changes
             if newValue != nil && libraries.isEmpty {
-                print("📺 [TVShowsLibraryView] Client became available, loading libraries...")
+                print("📺 [TVShowsLibraryView] Server became available, loading libraries...")
                 Task {
                     await loadLibraries()
                 }
