@@ -1036,7 +1036,7 @@ class VideoPlayerManager: ObservableObject {
             // This helps tvOS associate the artwork with the metadata
             if let artPath = media.art ?? media.thumb {
                 let artworkItem = AVMutableMetadataItem()
-                artworkItem.identifier = .commonIdentifierArtworkURI
+                artworkItem.identifier = .commonIdentifierArtwork
                 var artURLString = baseURL.absoluteString + artPath
                 if let token = token {
                     artURLString += "?X-Plex-Token=\(token)"
@@ -1048,7 +1048,9 @@ class VideoPlayerManager: ObservableObject {
             // Set external metadata on player item for transport bar and Info panel
             if let playerItem = self.playerItem {
                 playerItem.externalMetadata = externalMetadata
-                print("🎬 [Player] Set external metadata: title='\(titleItem.value ?? "nil")', subtitle='\(subtitleItem.value ?? "nil")'")
+                let titleValue = titleItem.value as? String ?? "nil"
+                let subtitleValue = subtitleItem.value as? String ?? "nil"
+                print("🎬 [Player] Set external metadata: title='\(titleValue)', subtitle='\(subtitleValue)'")
             }
         }
         #endif
