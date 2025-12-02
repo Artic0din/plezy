@@ -82,13 +82,7 @@ struct SettingsView: View {
                         HStack(spacing: 20) {
                             Image(systemName: "textformat.size")
                                 .font(.title2)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color.beaconOrange, Color.beaconMagenta],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                                .foregroundColor(.white)
                                 .frame(width: 40)
 
                             Text("Subtitle size")
