@@ -98,60 +98,22 @@ struct CardButtonStyle: ButtonStyle {
     }
 }
 
-/// Clear Liquid Glass button style for media overlays
-/// Uses highly translucent material ideal for rich media backgrounds with strong vibrancy
-/// Focus state is tracked for visual styling only - Apple handles focus behavior
+/// Apple TV-style button - Clean, simple, minimal
+/// Matches the latest Apple TV app design without fancy effects
 struct ClearGlassButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused: Bool
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.horizontal, 48)
-            .padding(.vertical, DesignTokens.spacingXLarge) // Ensures minimum 44pt touch target
+            .padding(.horizontal, 40)
+            .padding(.vertical, 16)
             .background(
-                ZStack {
-                    if reduceTransparency {
-                        // Solid color fallback for Reduce Transparency accessibility
-                        Capsule()
-                            .fill(Color.beaconSurface)
-                            .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.85))
-
-                        // Beacon gradient fill when focused
-                        if isFocused {
-                            Capsule()
-                                .fill(Color.beaconGradient)
-                                .opacity(0.5)
-                        }
-                    } else {
-                        // Dark dimming layer for contrast over bright content
-                        Capsule()
-                            .fill(Color.black.opacity(DesignTokens.materialOpacityDimming))
-
-                        // Clear Liquid Glass material with vibrancy
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .opacity(configuration.isPressed ? 0.65 : (isFocused ? 1.0 : 0.88))
-
-                        // Beacon gradient fill when focused
-                        if isFocused {
-                            Capsule()
-                                .fill(Color.beaconGradient)
-                                .opacity(0.4)
-                        }
-                    }
-                }
+                Capsule()
+                    .fill(Color.white.opacity(isFocused ? 0.3 : 0.18))
             )
             .clipShape(Capsule())
-            .contentShape(Capsule())
-            .shadow(
-                color: isFocused ? Color.beaconPurple.opacity(0.5) : DesignTokens.Shadow.buttonFocused.color,
-                radius: isFocused ? DesignTokens.Shadow.buttonFocused.radius : DesignTokens.Shadow.buttonUnfocused.radius,
-                x: 0,
-                y: isFocused ? DesignTokens.Shadow.buttonFocused.y : DesignTokens.Shadow.buttonUnfocused.y
-            )
-            .scaleEffect(configuration.isPressed ? DesignTokens.pressScale : 1.0)
-            .animation(DesignTokens.Animation.press.spring(), value: configuration.isPressed)
+            .scaleEffect(isFocused ? 1.05 : 1.0)
+            .animation(.easeOut(duration: 0.2), value: isFocused)
     }
 }
 
