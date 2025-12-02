@@ -878,184 +878,111 @@ class VideoPlayerManager: ObservableObject {
         isLoading = false
     }
 
-    private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
-        var nowPlayingInfo: [String: Any] = [:]
+    /// Helper to create properly formatted metadata items for tvOS transport bar
+    private func createMetadataItem(identifier: AVMetadataIdentifier, value: String) -> AVMetadataItem {
+        let item = AVMutableMetadataItem()
+        item.identifier = identifier
+        item.value = value as NSString
+        item.dataType = kCMMetadataBaseDataType_UTF8 as String
+        item.extendedLanguageTag = "und"
+        return item.copy() as! AVMetadataItem
+    }
 
-        // Title and subtitle for tvOS Now Playing display
+    private func setupNowPlayingMetadata(media: PlexMetadata, server: PlexServer, baseURL: URL, token: String?) {
+        #if os(tvOS)
+        // Build external metadata for transport bar display (Apple TV style)
+        // Note: externalMetadata is available on all tvOS versions, but we're following best practices
+        var externalMetadata: [AVMetadataItem] = []
+
+        // Title (top line in transport bar)
+        let titleText: String
+        if media.type == "episode", let showTitle = media.grandparentTitle {
+            titleText = showTitle
+        } else {
+            titleText = media.title
+        }
+
+        let titleItem = createMetadataItem(identifier: .commonIdentifierTitle, value: titleText)
+        externalMetadata.append(titleItem)
+
+        // Subtitle (bottom line in transport bar)
+        let subtitleText: String
         if media.type == "episode" {
-            // For TV episodes: Show name as title, episode info as artist/subtitle
-            if let showTitle = media.grandparentTitle {
-                nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
-                nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = showTitle
-            }
-            // Episode info as artist (shows as subtitle in some contexts)
             if let season = media.parentIndex, let episode = media.index {
-                nowPlayingInfo[MPMediaItemPropertyArtist] = "S\(season):E\(episode) • \(media.title)"
+                subtitleText = "S\(season):E\(episode) • \(media.title)"
             } else {
-                nowPlayingInfo[MPMediaItemPropertyArtist] = media.title
+                subtitleText = media.title
             }
         } else {
-            // For movies: Movie title as title, studio as artist
+            // For movies: Year • Rating • Duration
+            var components: [String] = []
+            if let year = media.year {
+                components.append("\(year)")
+            }
+            if let rating = media.contentRating {
+                components.append(rating)
+            }
+            if let duration = media.duration {
+                let mins = duration / 1000 / 60
+                let hrs = mins / 60
+                let durationStr = hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
+                components.append(durationStr)
+            }
+            subtitleText = components.joined(separator: " • ")
+        }
+
+        // Use .commonIdentifierDescription for subtitle - this is what Apple TV uses
+        let subtitleItem = createMetadataItem(identifier: .commonIdentifierDescription, value: subtitleText)
+        externalMetadata.append(subtitleItem)
+
+        // Additional metadata for Info tab
+        if let summary = media.summary {
+            let summaryItem = createMetadataItem(identifier: .quickTimeMetadataDescription, value: summary)
+            externalMetadata.append(summaryItem)
+        }
+
+        if let contentRating = media.contentRating {
+            let ratingItem = createMetadataItem(identifier: .iTunesMetadataContentRating, value: contentRating)
+            externalMetadata.append(ratingItem)
+        }
+
+        if let studio = media.studio {
+            let studioItem = createMetadataItem(identifier: .iTunesMetadataPublisher, value: studio)
+            externalMetadata.append(studioItem)
+        }
+
+        if let genres = media.genre, let firstGenre = genres.first {
+            let genreItem = createMetadataItem(identifier: .quickTimeMetadataGenre, value: firstGenre.tag)
+            externalMetadata.append(genreItem)
+        }
+
+        // Set metadata on player item BEFORE creating the player
+        if let playerItem = self.playerItem {
+            playerItem.externalMetadata = externalMetadata
+            print("🎬 [Player] Set metadata - Title: '\(titleText)' | Subtitle: '\(subtitleText)'")
+        }
+        #endif
+
+        // Now Playing info for Control Center / Lock Screen
+        var nowPlayingInfo: [String: Any] = [:]
+
+        if media.type == "episode", let showTitle = media.grandparentTitle {
+            nowPlayingInfo[MPMediaItemPropertyTitle] = showTitle
+            if let season = media.parentIndex, let episode = media.index {
+                nowPlayingInfo[MPMediaItemPropertyArtist] = "S\(season):E\(episode) • \(media.title)"
+            }
+        } else {
             nowPlayingInfo[MPMediaItemPropertyTitle] = media.title
             if let studio = media.studio {
                 nowPlayingInfo[MPMediaItemPropertyArtist] = studio
             }
-            if let year = media.year {
-                nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = "\(year)"
-            }
         }
 
-        // Duration
         if let duration = media.duration, duration > 0 {
-            let seconds = Double(duration) / 1000.0
-            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = seconds
+            nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = Double(duration) / 1000.0
         }
-
-        // External metadata for tvOS transport bar title view and Info panel
-        // This populates the system-standard AVPlayerViewController title and Info tab
-        #if os(tvOS)
-        if #available(tvOS 16.0, *) {
-            var externalMetadata: [AVMetadataItem] = []
-
-            // Title - displayed as main title in transport bar
-            // For episodes: show the series name
-            // For movies: show the movie title
-            let titleValue: String
-            if media.type == "episode", let showTitle = media.grandparentTitle {
-                titleValue = showTitle
-            } else {
-                titleValue = media.title
-            }
-
-            // Add as common identifier
-            let titleItem = AVMutableMetadataItem()
-            titleItem.identifier = .commonIdentifierTitle
-            titleItem.value = titleValue as NSString
-            externalMetadata.append(titleItem)
-
-            // Also add as QuickTime title for better tvOS compatibility
-            let qtTitleItem = AVMutableMetadataItem()
-            qtTitleItem.identifier = .quickTimeMetadataTitle
-            qtTitleItem.value = titleValue as NSString
-            externalMetadata.append(qtTitleItem)
-
-            // Subtitle / Info line - displayed below title in transport bar
-            // For TV episodes: "S1:E1 • Episode Name"
-            // For movies: year and content rating
-            let subtitleValue: String
-            if media.type == "episode" {
-                if let season = media.parentIndex, let episode = media.index {
-                    subtitleValue = "S\(season):E\(episode) • \(media.title)"
-                } else {
-                    subtitleValue = media.title
-                }
-            } else {
-                // For movies, show year and rating as subtitle
-                var movieSubtitle = ""
-                if let year = media.year {
-                    movieSubtitle = "\(year)"
-                }
-                if let rating = media.contentRating {
-                    movieSubtitle += movieSubtitle.isEmpty ? rating : " • \(rating)"
-                }
-                if let duration = media.duration {
-                    let mins = duration / 1000 / 60
-                    let hrs = mins / 60
-                    let durationStr = hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
-                    movieSubtitle += movieSubtitle.isEmpty ? durationStr : " • \(durationStr)"
-                }
-                subtitleValue = movieSubtitle
-            }
-
-            // Add subtitle as iTunes track subtitle
-            let subtitleItem = AVMutableMetadataItem()
-            subtitleItem.identifier = .iTunesMetadataTrackSubTitle
-            subtitleItem.value = subtitleValue as NSString
-            externalMetadata.append(subtitleItem)
-
-            // Also add as QuickTime description for better visibility
-            let qtDescItem = AVMutableMetadataItem()
-            qtDescItem.identifier = .quickTimeMetadataDescription
-            qtDescItem.value = subtitleValue as NSString
-            externalMetadata.append(qtDescItem)
-
-            // Also set as "album artist" which some tvOS versions use for subtitle display
-            let artistItem = AVMutableMetadataItem()
-            artistItem.identifier = .commonIdentifierArtist
-            if media.type == "episode" {
-                if let season = media.parentIndex, let episode = media.index {
-                    artistItem.value = "S\(season):E\(episode) • \(media.title)" as NSString
-                } else {
-                    artistItem.value = media.title as NSString
-                }
-            } else if let studio = media.studio {
-                artistItem.value = studio as NSString
-            }
-            externalMetadata.append(artistItem)
-
-            // Description / Synopsis for Info panel
-            if let summary = media.summary {
-                let descItem = AVMutableMetadataItem()
-                descItem.identifier = .commonIdentifierDescription
-                descItem.value = summary as NSString
-                externalMetadata.append(descItem)
-            }
-
-            // Genre
-            if let genres = media.genre, let firstGenre = genres.first {
-                let genreItem = AVMutableMetadataItem()
-                genreItem.identifier = .quickTimeMetadataGenre
-                genreItem.value = firstGenre.tag as NSString
-                externalMetadata.append(genreItem)
-            }
-
-            // Year / Creation date (used for sorting, not display)
-            if let year = media.year {
-                let yearItem = AVMutableMetadataItem()
-                yearItem.identifier = .commonIdentifierCreationDate
-                yearItem.value = "\(year)" as NSString
-                externalMetadata.append(yearItem)
-            }
-
-            // Content Rating (e.g., "TV-MA", "PG-13")
-            if let contentRating = media.contentRating {
-                let ratingItem = AVMutableMetadataItem()
-                ratingItem.identifier = .iTunesMetadataContentRating
-                ratingItem.value = contentRating as NSString
-                externalMetadata.append(ratingItem)
-            }
-
-            // Studio/Network
-            if let studio = media.studio {
-                let studioItem = AVMutableMetadataItem()
-                studioItem.identifier = .iTunesMetadataPublisher
-                studioItem.value = studio as NSString
-                externalMetadata.append(studioItem)
-            }
-
-            // Artwork identifier for the transport bar artwork (loaded separately)
-            // This helps tvOS associate the artwork with the metadata
-            if let artPath = media.art ?? media.thumb {
-                let artworkItem = AVMutableMetadataItem()
-                artworkItem.identifier = .commonIdentifierArtwork
-                var artURLString = baseURL.absoluteString + artPath
-                if let token = token {
-                    artURLString += "?X-Plex-Token=\(token)"
-                }
-                artworkItem.value = artURLString as NSString
-                externalMetadata.append(artworkItem)
-            }
-
-            // Set external metadata on player item for transport bar and Info panel
-            if let playerItem = self.playerItem {
-                playerItem.externalMetadata = externalMetadata
-                print("🎬 [Player] Set external metadata: title='\(titleValue)', subtitle='\(subtitleValue)'")
-            }
-        }
-        #endif
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-        print("🎬 [Player] Set Now Playing metadata: \(media.title)")
 
         // Artwork - load asynchronously
         if let artPath = media.art ?? media.thumb {
