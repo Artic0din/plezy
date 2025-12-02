@@ -31,13 +31,7 @@ struct SearchView: View {
                 // Header
                 Text("Search")
                     .font(.system(size: 40, weight: .bold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.white, Color.beaconTextSecondary],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .foregroundColor(.white)
                     .padding(.horizontal, 80)
 
                 // Search field with Liquid Glass
@@ -46,31 +40,8 @@ struct SearchView: View {
                     .font(.title2)
                     .padding(20)
                     .background(
-                        ZStack {
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
-                                .fill(.regularMaterial)
-                                .opacity(0.5)
-
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.beaconBlue.opacity(0.1),
-                                            Color.beaconPurple.opacity(0.08)
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .blendMode(.plusLighter)
-                        }
-                    )
-                    .overlay(
                         RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusMedium)
-                            .strokeBorder(
-                                Color.beaconPurple.opacity(0.3),
-                                lineWidth: DesignTokens.borderWidthUnfocused
-                            )
+                            .fill(Color.white.opacity(0.15))
                     )
                     .foregroundColor(.white)
                     .padding(.horizontal, 80)
@@ -283,7 +254,7 @@ struct SearchSection: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(.beaconPurple)
+                    .foregroundColor(.white)
 
                 Text(title)
                     .font(.system(size: 28, weight: .bold))
