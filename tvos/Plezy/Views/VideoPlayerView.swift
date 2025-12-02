@@ -57,6 +57,9 @@ struct VideoPlayerView: View {
 
                 // Skip Intro/Credits overlay buttons
                 SkipButtonOverlay(playerManager: playerManager)
+
+                // Synopsis overlay (Apple TV style)
+                SynopsisOverlay(playerManager: playerManager)
             } else if playerManager.isLoading {
                 VStack(spacing: 20) {
                     ProgressView()
@@ -379,6 +382,98 @@ struct SkipButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Synopsis Overlay
+
+/// Synopsis overlay that appears at playback start (Apple TV style)
+struct SynopsisOverlay: View {
+    @ObservedObject var playerManager: VideoPlayerManager
+
+    var body: some View {
+        if playerManager.showSynopsisOverlay,
+           let media = playerManager.detailedMedia,
+           let summary = media.summary {
+            VStack {
+                Spacer()
+                    .frame(height: 200)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Title
+                        if media.type == "episode", let showTitle = media.grandparentTitle {
+                            Text(showTitle)
+                                .font(.system(size: 40, weight: .bold))
+                                .foregroundColor(.white)
+
+                            if let season = media.parentIndex, let episode = media.index {
+                                Text("S\(season):E\(episode) • \(media.title)")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                        } else {
+                            Text(media.title)
+                                .font(.system(size: 40, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+
+                        // Metadata row
+                        HStack(spacing: 12) {
+                            if let year = media.year {
+                                Text("\(year)")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+
+                            if let rating = media.contentRating {
+                                Text(rating)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(Color.white.opacity(0.2))
+                                    .cornerRadius(4)
+                            }
+
+                            if let duration = media.duration {
+                                let mins = duration / 1000 / 60
+                                let hrs = mins / 60
+                                let durationStr = hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m"
+                                Text(durationStr)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
+
+                        // Synopsis
+                        Text(summary)
+                            .font(.system(size: 22))
+                            .foregroundColor(.white.opacity(0.85))
+                            .lineLimit(4)
+                            .frame(maxWidth: 900, alignment: .leading)
+                    }
+
+                    Spacer()
+                }
+                .padding(.leading, 80)
+                .padding(.trailing, 80)
+
+                Spacer()
+            }
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.8),
+                        Color.black.opacity(0.6),
+                        Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .transition(.opacity)
+        }
+    }
+}
+
 // MARK: - Video Player Manager
 
 @MainActor
@@ -405,6 +500,9 @@ class VideoPlayerManager: ObservableObject {
     @Published var showSkipIntroButton: Bool = false
     @Published var creditsMarker: PlexMediaMarker?
     @Published var showSkipCreditsButton: Bool = false
+
+    // Synopsis overlay state
+    @Published var showSynopsisOverlay: Bool = false
 
     // Time at which to show content proposal (30 seconds before end)
     var contentProposalTime: CMTime {
@@ -534,6 +632,20 @@ class VideoPlayerManager: ObservableObject {
             // Start playback
             player.play()
             print("🎬 [Player] Starting playback")
+
+            // Show synopsis overlay at start (Apple TV style)
+            if detailedMedia.summary != nil {
+                showSynopsisOverlay = true
+                // Auto-hide after 5 seconds
+                Task {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    await MainActor.run {
+                        withAnimation(.easeOut(duration: 0.5)) {
+                            showSynopsisOverlay = false
+                        }
+                    }
+                }
+            }
 
             // Setup progress tracking
             setupProgressTracking(client: client, player: player, ratingKey: ratingKey)
