@@ -217,7 +217,7 @@ struct TVPlayerViewController: UIViewControllerRepresentable {
             let subtitleItem = AVMutableMetadataItem()
             subtitleItem.identifier = .iTunesMetadataTrackSubTitle
             if let season = nextEpisode.parentIndex, let episode = nextEpisode.index {
-                subtitleItem.value = "\(showTitle) • S\(season) E\(episode)" as NSString
+                subtitleItem.value = "\(showTitle) • S\(season):E\(episode)" as NSString
             } else {
                 subtitleItem.value = showTitle as NSString
             }
@@ -332,7 +332,7 @@ struct PlayerInfoView: View {
                     }
 
                     if let season = media.parentIndex, let episode = media.index {
-                        Text("Season \(season), Episode \(episode)")
+                        Text("S\(season):E\(episode)")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -890,7 +890,7 @@ class VideoPlayerManager: ObservableObject {
             }
             // Episode info as artist (shows as subtitle in some contexts)
             if let season = media.parentIndex, let episode = media.index {
-                nowPlayingInfo[MPMediaItemPropertyArtist] = "S\(season), E\(episode) – \(media.title)"
+                nowPlayingInfo[MPMediaItemPropertyArtist] = "S\(season):E\(episode) • \(media.title)"
             } else {
                 nowPlayingInfo[MPMediaItemPropertyArtist] = media.title
             }
@@ -930,13 +930,13 @@ class VideoPlayerManager: ObservableObject {
             externalMetadata.append(titleItem)
 
             // Subtitle / Info line - displayed below title in transport bar
-            // For TV episodes: "Sx, Ex – Episode Name"
+            // For TV episodes: "S1:E1 • Episode Name"
             // For movies: year and content rating
             let subtitleItem = AVMutableMetadataItem()
             subtitleItem.identifier = .iTunesMetadataTrackSubTitle
             if media.type == "episode" {
                 if let season = media.parentIndex, let episode = media.index {
-                    subtitleItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
+                    subtitleItem.value = "S\(season):E\(episode) • \(media.title)" as NSString
                 } else {
                     subtitleItem.value = media.title as NSString
                 }
@@ -964,7 +964,7 @@ class VideoPlayerManager: ObservableObject {
             artistItem.identifier = .commonIdentifierArtist
             if media.type == "episode" {
                 if let season = media.parentIndex, let episode = media.index {
-                    artistItem.value = "S\(season), E\(episode) – \(media.title)" as NSString
+                    artistItem.value = "S\(season):E\(episode) • \(media.title)" as NSString
                 } else {
                     artistItem.value = media.title as NSString
                 }
