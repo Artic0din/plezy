@@ -26,13 +26,7 @@ struct SettingsView: View {
                     // Header
                     Text("Settings")
                         .font(.system(size: 40, weight: .bold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.white, Color.beaconTextSecondary],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .foregroundColor(.white)
 
                     // Server Info
                     SettingsSection(title: "Server") {
@@ -221,13 +215,7 @@ struct SettingsRow: View {
         HStack(spacing: 20) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.beaconOrange, Color.beaconMagenta],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .foregroundColor(.white)
                 .frame(width: 40)
 
             VStack(alignment: .leading, spacing: 5) {
@@ -256,13 +244,7 @@ struct SettingsToggle: View {
         HStack(spacing: 20) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.beaconOrange, Color.beaconMagenta],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .foregroundColor(.white)
                 .frame(width: 40)
 
             Text(title)
@@ -273,7 +255,7 @@ struct SettingsToggle: View {
 
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .tint(Color.beaconPurple)
+                .tint(.white)
         }
     }
 }
@@ -293,13 +275,7 @@ struct SettingsButton: View {
             HStack(spacing: 20) {
                 Image(systemName: icon)
                     .font(.title2)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.beaconOrange, Color.beaconMagenta],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .foregroundColor(.white)
                     .frame(width: 40)
 
                 VStack(alignment: .leading, spacing: 5) {
