@@ -35,8 +35,8 @@ struct MediaDetailView: View {
     @State private var playMedia: PlexMetadata?
     @State private var playTrailer: PlexMetadata?
 
-    // Content padding (same as original cardPadding)
-    private let contentPadding: CGFloat = 48
+    // Content padding (increased for Apple TV-style spacing)
+    private let contentPadding: CGFloat = 90
 
     var body: some View {
         ZStack {
@@ -375,8 +375,8 @@ struct MediaDetailContent: View {
                 } placeholder: {
                     titleText
                 }
-                .frame(maxWidth: 600, maxHeight: 180, alignment: .leading)
-                .shadow(color: .black.opacity(0.7), radius: 10, x: 0, y: 4)
+                .frame(maxWidth: 700, maxHeight: 200, alignment: .leading)
+                .shadow(color: .black.opacity(0.7), radius: 12, x: 0, y: 6)
             } else {
                 titleText
             }
@@ -385,10 +385,10 @@ struct MediaDetailContent: View {
 
     private var titleText: some View {
         Text(media.title)
-            .font(.system(size: 76, weight: .bold))
+            .font(.system(size: 82, weight: .bold))
             .foregroundColor(.white)
             .lineLimit(2)
-            .shadow(color: .black.opacity(0.8), radius: 10, x: 0, y: 4)
+            .shadow(color: .black.opacity(0.8), radius: 12, x: 0, y: 6)
     }
 
     // Media Type Row: Type | Content Rating | Genre (+ Network Logo for TV shows)
@@ -396,7 +396,7 @@ struct MediaDetailContent: View {
         HStack(spacing: 10) {
             Text(media.type == "movie" ? "Movie" : "TV Show")
                 .foregroundColor(.white)
-                .fontWeight(.medium)
+                .fontWeight(.semibold)
 
             // Content Rating (cleaned - removes /au suffix)
             if let c = media.contentRating {
@@ -438,7 +438,7 @@ struct MediaDetailContent: View {
                 }
             }
         }
-        .font(.system(size: 24, weight: .medium))
+        .font(.system(size: 28, weight: .medium))
         .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
     }
 
@@ -457,7 +457,7 @@ struct MediaDetailContent: View {
 
     private var showSynopsis: some View {
         Text(media.summary ?? "")
-            .font(.system(size: 24, weight: .regular))
+            .font(.system(size: 26, weight: .regular))
             .foregroundColor(.white.opacity(0.9))
             .lineLimit(4)
             .frame(maxWidth: 1000, alignment: .leading)
@@ -500,7 +500,7 @@ struct MediaDetailContent: View {
                     .fontWeight(.semibold)
             }
         }
-        .font(.system(size: 20, weight: .medium))
+        .font(.system(size: 24, weight: .medium))
         .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
     }
 
@@ -549,26 +549,26 @@ struct MediaDetailContent: View {
             HStack(spacing: 10) {
                 if let s = episode.parentIndex, let e = episode.index {
                     Text("S\(s), E\(e)")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundColor(Color.beaconPurple)
                 }
                 if let d = episode.duration {
                     Text("·").foregroundColor(.white.opacity(0.6))
                     Text(formatDuration(d))
-                        .font(.system(size: 20))
+                        .font(.system(size: 22))
                         .foregroundColor(.white.opacity(0.8))
                 }
             }
             .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 2)
 
             Text(episode.title)
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: 28, weight: .semibold))
                 .foregroundColor(.white)
                 .lineLimit(1)
                 .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
 
             Text(episode.summary ?? "")
-                .font(.system(size: 20))
+                .font(.system(size: 22))
                 .foregroundColor(.white.opacity(0.85))
                 .lineLimit(2)
                 .frame(maxWidth: 1000, alignment: .leading)
@@ -578,14 +578,14 @@ struct MediaDetailContent: View {
 
     // ACTION BUTTONS
     private var actionButtons: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             // Play button
             Button(action: onPlay) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                     Text(playButtonLabel)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold))
                 }
                 .foregroundColor(.white)
             }
@@ -595,7 +595,7 @@ struct MediaDetailContent: View {
             if media.type == "show" && !seasons.isEmpty {
                 Button(action: {}) {
                     Image(systemName: "shuffle.circle.fill")
-                        .font(.system(size: 24))
+                        .font(.system(size: 28))
                 }
                 .buttonStyle(ClearGlassButtonStyle())
             }
@@ -603,11 +603,11 @@ struct MediaDetailContent: View {
             // Trailer button (movies only, when trailers available)
             if media.type == "movie", let firstTrailer = trailers.first {
                 Button(action: { onPlayTrailer(firstTrailer) }) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Image(systemName: "film.stack.fill")
                         Text("Trailer")
                     }
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 18, weight: .medium))
                 }
                 .buttonStyle(ClearGlassButtonStyle())
             }
@@ -690,10 +690,10 @@ struct SeasonChip: View {
     var body: some View {
         Button(action: action) {
             Text(season.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(isSelected ? .white : .white.opacity(0.6))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
                 .background(
                     Capsule()
                         .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(0.1))
