@@ -112,7 +112,7 @@ struct ServerCard: View {
                 HStack {
                     Image(systemName: "server.rack")
                         .font(.system(size: 40))
-                        .foregroundColor(.beaconPurple)
+                        .foregroundColor(.white)
 
                     Spacer()
 
@@ -152,10 +152,10 @@ struct ServerCard: View {
                             ConnectionBadge(text: "Local", color: .green)
                         }
                         if server.connections.contains(where: { !$0.local && !$0.relay }) {
-                            ConnectionBadge(text: "Remote", color: .beaconBlue)
+                            ConnectionBadge(text: "Remote", color: .blue)
                         }
                         if server.connections.contains(where: { $0.relay }) {
-                            ConnectionBadge(text: "Relay", color: .beaconMagenta)
+                            ConnectionBadge(text: "Relay", color: .purple)
                         }
                     }
                 }
@@ -169,15 +169,7 @@ struct ServerCard: View {
             .overlay(
                 RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge)
                     .strokeBorder(
-                        LinearGradient(
-                            colors: isFocused ? [
-                                Color.beaconBlue,
-                                Color.beaconPurple,
-                                Color.beaconMagenta
-                            ] : [Color.white.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
+                        Color.white.opacity(isFocused ? 0.6 : 0.2),
                         lineWidth: isFocused ? DesignTokens.borderWidthFocusedThick : 2
                     )
             )
