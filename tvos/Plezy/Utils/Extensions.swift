@@ -35,66 +35,22 @@ struct MediaCardButtonStyle: ButtonStyle {
     }
 }
 
-/// Card button style with Liquid Glass design for tvOS
-/// Uses regularMaterial for depth and vibrancy
-/// Focus state is tracked for visual styling only - Apple handles focus behavior
+/// Card button style - Clean Apple TV design
+/// Simple, minimal, no fancy effects
 struct CardButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused: Bool
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.horizontal, 40)
-            .padding(.vertical, DesignTokens.spacingXLarge) // Ensures minimum 44pt touch target
+            .padding(.vertical, 16)
             .background(
-                ZStack {
-                    if reduceTransparency {
-                        // Solid color fallback for Reduce Transparency accessibility
-                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
-                            .fill(Color.beaconSurface)
-                            .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.85))
-                    } else {
-                        // Liquid Glass background
-                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
-                            .fill(.regularMaterial)
-                            .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : DesignTokens.materialOpacityButton))
-
-                        // Vibrancy layer
-                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(configuration.isPressed ? 0.12 : (isFocused ? 0.28 : 0.15)),
-                                        Color.white.opacity(configuration.isPressed ? 0.08 : (isFocused ? 0.20 : 0.10))
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-                }
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(isFocused ? 0.3 : 0.18))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: isFocused ? [.white.opacity(0.5), .white.opacity(0.25)] : [.clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: isFocused ? DesignTokens.borderWidthFocused : 0
-                    )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusLarge, style: .continuous))
-            .shadow(
-                color: DesignTokens.Shadow.cardFocused.color,
-                radius: isFocused ? DesignTokens.Shadow.cardFocused.radius : DesignTokens.Shadow.cardUnfocused.radius,
-                x: 0,
-                y: isFocused ? DesignTokens.Shadow.cardFocused.y : DesignTokens.Shadow.cardUnfocused.y
-            )
-            .scaleEffect(configuration.isPressed ? DesignTokens.pressScale : 1.0)
-            .animation(DesignTokens.Animation.press.spring(), value: configuration.isPressed)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .scaleEffect(isFocused ? 1.05 : 1.0)
+            .animation(.easeOut(duration: 0.2), value: isFocused)
     }
 }
 
@@ -129,286 +85,6 @@ extension ButtonStyle where Self == ClearGlassButtonStyle {
     }
 }
 
-// MARK: - Liquid Glass View Modifiers
-
-extension View {
-    /// Applies a Liquid Glass background effect with beacon gradient accent
-    /// Perfect for cards, panels, and elevated UI elements
-    func liquidGlassBackground(cornerRadius: CGFloat = DesignTokens.cornerRadiusXLarge, opacity: Double = DesignTokens.materialOpacityFull) -> some View {
-        LiquidGlassBackgroundModifier(cornerRadius: cornerRadius, opacity: opacity, content: self)
-    }
-}
-
-struct LiquidGlassBackgroundModifier<Content: View>: View {
-    let cornerRadius: CGFloat
-    let opacity: Double
-    let content: Content
-
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        content
-            .background(
-                ZStack {
-                    if reduceTransparency {
-                        // Solid color fallback for Reduce Transparency
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.beaconSurface)
-                    } else {
-                        // Base glass material
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.regularMaterial)
-                            .opacity(opacity)
-
-                        // Beacon gradient vibrancy overlay
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.beaconBlue.opacity(0.12),
-                                        Color.beaconPurple.opacity(0.10),
-                                        Color.beaconMagenta.opacity(0.08)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .blendMode(.plusLighter)
-                    }
-                }
-            )
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    }
-}
-
-extension View {
-    /// Applies an ultra-thin Liquid Glass effect for overlays
-    /// Ideal for navigation bars, toolbars, and floating panels
-    func thinLiquidGlass(cornerRadius: CGFloat = DesignTokens.cornerRadiusMedium) -> some View {
-        ThinLiquidGlassModifier(cornerRadius: cornerRadius, content: self)
-    }
-}
-
-struct ThinLiquidGlassModifier<Content: View>: View {
-    let cornerRadius: CGFloat
-    let content: Content
-
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        content
-            .background(
-                ZStack {
-                    if reduceTransparency {
-                        // Solid color fallback for Reduce Transparency
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.beaconSurface.opacity(0.7))
-                    } else {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.ultraThinMaterial)
-
-                        // Subtle beacon accent
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(DesignTokens.materialOpacitySubtle),
-                                        Color.beaconPurple.opacity(0.08)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .blendMode(.overlay)
-                    }
-                }
-            )
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    }
-}
-
-extension View {
-    /// Applies a beacon gradient border
-    func beaconBorder(cornerRadius: CGFloat = DesignTokens.cornerRadiusLarge, lineWidth: CGFloat = 2) -> some View {
-        self.overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.beaconBlue,
-                            Color.beaconPurple,
-                            Color.beaconMagenta
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: lineWidth
-                )
-        )
-    }
-
-    /// Applies a subtle beacon glow shadow
-    func beaconGlow(radius: CGFloat = 20, opacity: Double = 0.4) -> some View {
-        self.shadow(
-            color: Color.beaconPurple.opacity(opacity),
-            radius: radius,
-            x: 0,
-            y: DesignTokens.spacingXSmall
-        )
-    }
-
-    /// Applies Liquid Glass styling to section headers
-    func liquidGlassSectionHeader() -> some View {
-        self.modifier(LiquidGlassSectionHeaderModifier())
-    }
-
-    /// Applies Liquid Glass styling to overlay panels
-    func liquidGlassOverlay(cornerRadius: CGFloat = DesignTokens.cornerRadiusHero) -> some View {
-        self.modifier(LiquidGlassOverlayModifier(cornerRadius: cornerRadius))
-    }
-
-    /// Applies Liquid Glass focus ring for focusable elements
-    func liquidGlassFocusRing(isFocused: Bool, cornerRadius: CGFloat = DesignTokens.cornerRadiusLarge) -> some View {
-        self.modifier(LiquidGlassFocusRingModifier(isFocused: isFocused, cornerRadius: cornerRadius))
-    }
-}
-
-/// Liquid Glass section header modifier
-struct LiquidGlassSectionHeaderModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(
-                ZStack {
-                    // Glass material
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.6)
-
-                    // Beacon gradient accent
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.beaconPurple.opacity(0.15),
-                                    Color.beaconBlue.opacity(0.08)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .blendMode(.plusLighter)
-
-                    // Edge highlight
-                    Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.25),
-                                    Color.white.opacity(0.1)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
-            .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
-    }
-}
-
-/// Liquid Glass overlay panel modifier
-struct LiquidGlassOverlayModifier: ViewModifier {
-    let cornerRadius: CGFloat
-
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                ZStack {
-                    if reduceTransparency {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.beaconSurface.opacity(0.95))
-                    } else {
-                        // Dark base layer
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.black.opacity(0.4))
-
-                        // Glass material
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .opacity(0.85)
-
-                        // Beacon vibrancy
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.beaconBlue.opacity(0.08),
-                                        Color.beaconPurple.opacity(0.06),
-                                        Color.beaconMagenta.opacity(0.04)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .blendMode(.plusLighter)
-
-                        // Edge highlight
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.2),
-                                        Color.white.opacity(0.05)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                }
-            )
-            .shadow(color: .black.opacity(0.4), radius: 25, x: 0, y: 12)
-    }
-}
-
-/// Liquid Glass focus ring modifier
-struct LiquidGlassFocusRingModifier: ViewModifier {
-    let isFocused: Bool
-    let cornerRadius: CGFloat
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: isFocused ? [
-                                Color.white.opacity(0.5),
-                                Color.beaconPurple.opacity(0.4),
-                                Color.white.opacity(0.3)
-                            ] : [Color.clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: isFocused ? 3 : 0
-                    )
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
-            )
-            .shadow(
-                color: isFocused ? Color.beaconPurple.opacity(0.4) : .clear,
-                radius: isFocused ? 15 : 0,
-                x: 0,
-                y: 0
-            )
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
-    }
-}
 
 // MARK: - Responsive Scaling
 
@@ -439,7 +115,7 @@ extension View {
 
 // MARK: - Design Tokens
 
-/// Liquid Glass Design System Tokens
+/// Apple TV Design System Tokens
 /// Centralized constants for consistent UI implementation across tvOS app
 enum DesignTokens {
     // MARK: - Corner Radius
@@ -607,56 +283,13 @@ enum DesignTokens {
 // MARK: - Color Extensions
 
 extension Color {
-    // MARK: - Beacon Design System Colors
+    // MARK: - Apple TV Color Palette
 
-    // Background Colors
-    static let beaconBackground = Color(hex: "#0f0f0f")
-    static let beaconSurface = Color(hex: "#1a1a1a")
-    static let beaconSurfaceHover = Color(hex: "#242424")
-    static let beaconSurfaceSecondary = Color(hex: "#2a2a2a")
-
-    // Gradient Colors (Individual Stops)
-    static let beaconBlue = Color(hex: "#2962ff")
-    static let beaconPurple = Color(hex: "#7c4dff")
-    static let beaconMagenta = Color(hex: "#e91e63")
-    static let beaconRed = Color(hex: "#f44336")
-    static let beaconOrange = Color(hex: "#ff6b35")
-
-    // Text Colors
-    static let beaconTextPrimary = Color(hex: "#ffffff")
-    static let beaconTextSecondary = Color(hex: "#e0e0e0")
-    static let beaconTextTertiary = Color(hex: "#a0a0a0")
-    static let beaconTextDisabled = Color(hex: "#666666")
-
-    // Primary Gradient (for buttons, CTAs, progress bars)
-    static var beaconGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                beaconBlue,
-                beaconPurple,
-                beaconMagenta,
-                beaconRed,
-                beaconOrange
-            ]),
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    // Gradient overlay at 60% opacity (for hover effects)
-    static func beaconGradientOverlay(opacity: Double = 0.6) -> LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                beaconBlue.opacity(opacity),
-                beaconPurple.opacity(opacity),
-                beaconMagenta.opacity(opacity),
-                beaconRed.opacity(opacity),
-                beaconOrange.opacity(opacity)
-            ]),
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
+    // Simple greys for Apple TV style
+    static let tvBackground = Color(hex: "#000000")
+    static let tvSurface = Color(hex: "#1c1c1e")
+    static let tvSecondary = Color(hex: "#2c2c2e")
+    static let tvTertiary = Color(hex: "#3a3a3c")
 
     // Helper to create Color from hex string
     init(hex: String) {
@@ -682,10 +315,6 @@ extension Color {
             opacity: Double(a) / 255
         )
     }
-
-    // Legacy colors for backward compatibility
-    static let plexOrange = beaconOrange
-    static let plexYellow = beaconOrange
 }
 
 // MARK: - Date Extensions

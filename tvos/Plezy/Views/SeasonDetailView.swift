@@ -153,14 +153,12 @@ struct EpisodeRow: View {
                                     ZStack(alignment: .leading) {
                                         // Background track
                                         Capsule()
-                                            .fill(.regularMaterial)
-                                            .opacity(0.4)
+                                            .fill(Color.white.opacity(0.3))
 
-                                        // Progress fill with beacon gradient
+                                        // Progress fill
                                         Capsule()
-                                            .fill(Color.beaconGradient)
+                                            .fill(Color.white)
                                             .frame(width: geometry.size.width * episode.progress)
-                                            .shadow(color: Color.beaconMagenta.opacity(0.5), radius: 4, x: 0, y: 0)
                                     }
                                 }
                                 .frame(height: 6)
@@ -197,24 +195,8 @@ struct EpisodeRow: View {
                                             .foregroundColor(.white)
                                             .padding(12)
                                             .background(
-                                                ZStack {
-                                                    Circle()
-                                                        .fill(.regularMaterial)
-                                                        .opacity(0.8)
-
-                                                    Circle()
-                                                        .fill(
-                                                            LinearGradient(
-                                                                colors: [
-                                                                    Color.beaconBlue.opacity(0.2),
-                                                                    Color.beaconPurple.opacity(0.15)
-                                                                ],
-                                                                startPoint: .topLeading,
-                                                                endPoint: .bottomTrailing
-                                                            )
-                                                        )
-                                                        .blendMode(.plusLighter)
-                                                }
+                                                Circle()
+                                                    .fill(Color.white.opacity(0.3))
                                             )
                                     }
                                     .buttonStyle(MediaCardButtonStyle())
@@ -268,42 +250,10 @@ struct EpisodeRow: View {
             }
             .padding(20)
             .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge)
-                        .fill(.regularMaterial)
-                        .opacity(isFocused ? 0.35 : DesignTokens.materialOpacitySubtle)
-
-                    if isFocused {
-                        RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.beaconBlue.opacity(0.12),
-                                        Color.beaconPurple.opacity(0.08)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .blendMode(.plusLighter)
-                    }
-                }
-            )
-            .overlay(
                 RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: isFocused ? [
-                                Color.beaconBlue,
-                                Color.beaconPurple
-                            ] : [.clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: isFocused ? 4 : 0
-                    )
+                    .fill(Color.white.opacity(isFocused ? 0.2 : 0.1))
             )
-            .shadow(color: isFocused ? Color.beaconPurple.opacity(0.4) : .clear, radius: isFocused ? 15 : 0, x: 0, y: isFocused ? 8 : 0)
+            .shadow(color: isFocused ? .black.opacity(0.4) : .black.opacity(0.2), radius: isFocused ? 15 : 8, x: 0, y: isFocused ? 8 : 4)
         }
         .buttonStyle(MediaCardButtonStyle())
         .focused($isFocused)

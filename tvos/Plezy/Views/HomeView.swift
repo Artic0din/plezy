@@ -769,9 +769,8 @@ struct TopMenuItem: View {
 
                 if isSelected {
                     Capsule()
-                        .fill(Color.beaconGradient)
+                        .fill(Color.white)
                         .frame(height: 4)
-                        .shadow(color: Color.beaconPurple.opacity(0.8), radius: 8, x: 0, y: 0)
                 } else {
                     Capsule()
                         .fill(Color.clear)

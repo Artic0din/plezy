@@ -523,30 +523,11 @@ struct SkipButtonStyle: ButtonStyle {
 
                     // Clear glass material
                     Capsule()
-                        .fill(.ultraThinMaterial)
-                        .opacity(configuration.isPressed ? 0.7 : (isFocused ? 1.0 : 0.9))
-
-                    // Beacon gradient on focus
-                    if isFocused {
-                        Capsule()
-                            .fill(Color.beaconGradient)
-                            .opacity(0.35)
-                    }
+                        .fill(Color.white.opacity(isFocused ? 0.3 : 0.18))
                 }
             )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: isFocused ? [.white.opacity(0.6), .white.opacity(0.3)] : [.white.opacity(0.3)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: isFocused ? 2 : 1
-                    )
-            )
             .shadow(
-                color: isFocused ? Color.beaconPurple.opacity(0.5) : Color.black.opacity(0.4),
+                color: .black.opacity(isFocused ? 0.6 : 0.4),
                 radius: isFocused ? 20 : 10,
                 x: 0,
                 y: isFocused ? 8 : 4

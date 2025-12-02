@@ -98,12 +98,11 @@ struct MediaCardRow<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Section title with Liquid Glass styling
+            // Section title
             HStack {
                 Text(title)
                     .font(.system(size: 36, weight: .bold, design: .default))
                     .foregroundColor(.white)
-                    .liquidGlassSectionHeader()
                 Spacer()
             }
             .padding(.horizontal, CardRowLayout.horizontalPadding)
@@ -153,12 +152,11 @@ struct ContinueWatchingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Section title with Liquid Glass styling
+            // Section title
             HStack {
                 Text("Up Next")
                     .font(.system(size: 32, weight: .bold, design: .default))
                     .foregroundColor(.white)
-                    .liquidGlassSectionHeader()
                 Spacer()
             }
             .padding(.horizontal, CardRowLayout.horizontalPadding)
@@ -238,12 +236,11 @@ struct HubRow: View {
     var body: some View {
         if let items = hub.metadata, !items.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
-                // Section title with Liquid Glass styling
+                // Section title
                 HStack {
                     Text(hub.title)
                         .font(.system(size: 36, weight: .bold, design: .default))
                         .foregroundColor(.white)
-                        .liquidGlassSectionHeader()
                     Spacer()
                 }
                 .padding(.horizontal, CardRowLayout.horizontalPadding)
@@ -291,12 +288,11 @@ struct GeometryMediaCardRow: View {
             let calculatedHeight = CardRowLayout.cardHeight(for: calculatedWidth)
 
             VStack(alignment: .leading, spacing: 20) {
-                // Section title with Liquid Glass styling
+                // Section title
                 HStack {
                     Text(title)
                         .font(.system(size: 36, weight: .bold, design: .default))
                         .foregroundColor(.white)
-                        .liquidGlassSectionHeader()
                     Spacer()
                 }
                 .padding(.horizontal, CardRowLayout.horizontalPadding)

@@ -258,48 +258,16 @@ struct MediaCard: View {
                     }
                     .frame(width: config.width, height: config.height)
 
-                    // Layer 2: Liquid Glass gradient overlay with vibrancy
-                    ZStack {
-                        // Base gradient for text contrast
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.black.opacity(0.0),
-                                Color.black.opacity(0.25),
-                                Color.black.opacity(config.showLabel == .inside || config.showProgress ? 0.75 : 0.45)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-
-                        // Liquid Glass vibrancy layer
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(isFocused ? 0.08 : 0.03),
-                                Color.clear,
-                                Color.beaconPurple.opacity(isFocused ? 0.12 : 0.05)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .blendMode(.plusLighter)
-
-                        // Liquid Glass edge highlight on focus
-                        if isFocused {
-                            RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge, style: .continuous)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.white.opacity(0.5),
-                                            Color.white.opacity(0.2),
-                                            Color.beaconPurple.opacity(0.3)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 2.5
-                                )
-                        }
-                    }
+                    // Layer 2: Simple gradient for text contrast
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color.black.opacity(0.0),
+                            Color.black.opacity(0.25),
+                            Color.black.opacity(config.showLabel == .inside || config.showProgress ? 0.75 : 0.45)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
 
                     // Layer 3: Logo/Title overlay (if enabled and inside)
                     if config.showLogo && config.showLabel == .inside {
@@ -338,17 +306,15 @@ struct MediaCard: View {
                         VStack {
                             Spacer()
                             ZStack(alignment: .leading) {
-                                // Background capsule - Liquid Glass effect
+                                // Background capsule
                                 Capsule()
-                                    .fill(.ultraThinMaterial)
-                                    .opacity(0.6)
+                                    .fill(Color.white.opacity(0.3))
                                     .frame(width: config.width - 24, height: 6)
 
-                                // Progress capsule - beacon gradient
+                                // Progress capsule
                                 Capsule()
-                                    .fill(Color.beaconGradient)
+                                    .fill(Color.white)
                                     .frame(width: (config.width - 24) * media.progress, height: 6)
-                                    .shadow(color: Color.beaconMagenta.opacity(0.7), radius: 6, x: 0, y: 0)
                             }
                             .padding(.horizontal, 12)
                             .padding(.bottom, 12)
@@ -359,15 +325,9 @@ struct MediaCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: DesignTokens.cornerRadiusXLarge, style: .continuous))
             }
             .frame(width: config.width, height: config.height)
-            // Enhanced Liquid Glass shadow with focus state
+            // Simple shadow
             .shadow(
-                color: isFocused ? Color.beaconPurple.opacity(0.4) : .black.opacity(0.3),
-                radius: isFocused ? 50 : 18,
-                x: 0,
-                y: isFocused ? 25 : 10
-            )
-            .shadow(
-                color: .black.opacity(isFocused ? 0.45 : 0.25),
+                color: .black.opacity(isFocused ? 0.6 : 0.3),
                 radius: isFocused ? 25 : 10,
                 x: 0,
                 y: isFocused ? 12 : 5

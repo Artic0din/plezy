@@ -357,7 +357,7 @@ struct FilterButton: View {
                 .padding(.vertical, 10)
                 .background(
                     Capsule()
-                        .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(isFocused ? 0.2 : 0.1))
+                        .fill(isSelected ? Color.white.opacity(0.3) : Color.white.opacity(isFocused ? 0.2 : 0.1))
                 )
                 .overlay(
                     Capsule()

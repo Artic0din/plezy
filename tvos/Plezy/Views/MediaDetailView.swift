@@ -550,7 +550,7 @@ struct MediaDetailContent: View {
                 if let s = episode.parentIndex, let e = episode.index {
                     Text("S\(s), E\(e)")
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(Color.beaconPurple)
+                        .foregroundColor(.white)
                 }
                 if let d = episode.duration {
                     Text("·").foregroundColor(.white.opacity(0.6))
@@ -696,7 +696,7 @@ struct SeasonChip: View {
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(isSelected ? Color.beaconPurple.opacity(0.8) : Color.white.opacity(0.1))
+                        .fill(isSelected ? Color.white.opacity(0.3) : Color.white.opacity(0.1))
                 )
                 .overlay(
                     Capsule()
@@ -863,7 +863,7 @@ struct ProgressBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.3))
                 Capsule()
-                    .fill(Color.beaconPurple)
+                    .fill(Color.white)
                     .frame(width: geo.size.width * progress)
             }
         }
