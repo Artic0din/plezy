@@ -38,17 +38,11 @@ struct SeasonDetailView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(show.title)
                             .font(.title3)
-                            .foregroundColor(Color.beaconTextTertiary)
+                            .foregroundColor(.gray)
 
                         Text(season.title)
                             .font(.system(size: 36, weight: .bold))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.white, Color.beaconTextSecondary],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .foregroundColor(.white)
                     }
 
                     Spacer()
