@@ -852,8 +852,10 @@ class VideoPlayerManager: ObservableObject {
         let titleText: String
         if media.type == "episode", let showTitle = media.grandparentTitle {
             titleText = showTitle
+            print("🎬 [Metadata] Episode - Title set to show name: '\(titleText)'")
         } else {
             titleText = media.title
+            print("🎬 [Metadata] Movie/Other - Title set to media title: '\(titleText)' (type: \(media.type ?? "unknown"))")
         }
         externalMetadata.append(createMetadataItem(identifier: .commonIdentifierTitle, value: titleText))
 
@@ -865,6 +867,7 @@ class VideoPlayerManager: ObservableObject {
             } else {
                 descriptionText = media.title
             }
+            print("🎬 [Metadata] Episode - Description: '\(descriptionText)'")
         } else {
             var components: [String] = []
             if let year = media.year {
@@ -879,6 +882,7 @@ class VideoPlayerManager: ObservableObject {
                 components.append(hrs > 0 ? "\(hrs)h \(mins % 60)m" : "\(mins)m")
             }
             descriptionText = components.joined(separator: " • ")
+            print("🎬 [Metadata] Movie/Other - Description: '\(descriptionText)' (components: \(components.count))")
         }
         externalMetadata.append(createMetadataItem(identifier: .commonIdentifierDescription, value: descriptionText))
 
